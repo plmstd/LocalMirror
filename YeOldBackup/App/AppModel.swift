@@ -82,7 +82,7 @@ final class AppModel: ObservableObject {
             }
 
             if let installation, !installation.isBundled {
-                statusNote = "Bundled rsync helper is missing; YeOldBackup is using a fallback binary."
+                statusNote = "Bundled rsync helper is unavailable or unhealthy; YeOldBackup is using a fallback binary."
             }
         } catch {
             runState = .failed(
