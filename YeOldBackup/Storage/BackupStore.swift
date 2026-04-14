@@ -150,6 +150,7 @@ final class BackupStore {
                     targetCanonicalPath: targetURL.map(BackupPathValidator.canonicalPath(for:)) ?? targetPath,
                     sourceVolume: sourceURL.flatMap { try? VolumeIdentityResolver.resolve(for: $0) } ?? .placeholder(for: sourcePath),
                     targetVolume: targetURL.flatMap { try? VolumeIdentityResolver.resolve(for: $0) } ?? .placeholder(for: targetPath),
+                    targetCapabilities: targetURL.flatMap { try? VolumeIdentityResolver.resolveTargetCapabilities(for: $0) } ?? .unknown,
                     createdAt: Date(),
                     lastRun: nil
                 )
@@ -180,6 +181,7 @@ final class BackupStore {
             targetCanonicalPath: targetCanonical,
             sourceVolume: sourceURL.flatMap { try? VolumeIdentityResolver.resolve(for: $0) } ?? .placeholder(for: legacy.sourcePath),
             targetVolume: targetURL.flatMap { try? VolumeIdentityResolver.resolve(for: $0) } ?? .placeholder(for: legacy.targetPath),
+            targetCapabilities: targetURL.flatMap { try? VolumeIdentityResolver.resolveTargetCapabilities(for: $0) } ?? .unknown,
             createdAt: legacy.lastSuccessDate ?? legacy.lastSync,
             lastRun: legacy.lastSuccessDate.map {
                 BackupPairLastRun(date: $0, status: legacy.status, warningCount: 0, logID: UUID())

@@ -14,37 +14,17 @@ final class RsyncBinaryLocator {
         for candidate in candidates where fileExistsAndExecutable(candidate) {
             do {
                 let version = try versionDescription(for: candidate)
-                let bundled = candidate.path != "/usr/bin/rsync"
-                return SyncInstallation(binaryURL: candidate, versionDescription: version, isBundled: bundled)
+                let kind: SyncInstallationKind = candidate.path == "/usr/bin/rsync" ? .systemProvided : .custom
+                return SyncInstallation(binaryURL: candidate, versionDescription: version, kind: kind)
             } catch {
                 continue
             }
         }
-        throw BackupError.helperMissing("No usable rsync helper was found. Reinstall YeOldBackup to restore the bundled helper.")
+        throw BackupError.helperMissing("The macOS-provided rsync executable is unavailable or unhealthy.")
     }
 
     private static func defaultCandidates() -> [URL] {
-        let locator = RsyncBinaryLocator(candidatesProvider: { [] })
-        return locator.bundledCandidates() + [locator.debugSourceTreeCandidate(), URL(fileURLWithPath: "/usr/bin/rsync")]
-    }
-
-    private func bundledCandidates() -> [URL] {
-        let bundle = Bundle.main.bundleURL
-        let resource = Bundle.main.resourceURL
-        return [
-            bundle.appendingPathComponent("Contents/Helpers/rsync"),
-            bundle.appendingPathComponent("Contents/Resources/Helpers/rsync"),
-            bundle.appendingPathComponent("Contents/Resources/rsync"),
-            resource?.appendingPathComponent("Helpers/rsync"),
-            resource?.appendingPathComponent("rsync")
-        ].compactMap { $0 }
-    }
-
-    private func debugSourceTreeCandidate() -> URL {
-        URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .appendingPathComponent("Helpers/rsync")
+        [URL(fileURLWithPath: "/usr/bin/rsync")]
     }
 
     private func fileExistsAndExecutable(_ url: URL) -> Bool {

@@ -7,10 +7,16 @@ final class BackupOrchestrator: ObservableObject {
     @Published private(set) var installation: SyncInstallation?
 
     private let engine: SyncEngine
+    private let snapshotService: SnapshotService
     private let exclusions: [String]
 
-    init(engine: SyncEngine, exclusions: [String] = BackupExclusions.defaults) {
+    init(
+        engine: SyncEngine,
+        snapshotService: SnapshotService = NoopSnapshotService(),
+        exclusions: [String] = BackupExclusions.defaults
+    ) {
         self.engine = engine
+        self.snapshotService = snapshotService
         self.exclusions = exclusions
         self.installation = try? engine.validateInstallation()
     }
@@ -53,7 +59,7 @@ final class BackupOrchestrator: ObservableObject {
         guard case .review(let report) = state else { return }
 
         let initialProgress = RunProgress(
-            phase: "Starting mirror backup…",
+            phase: "Starting clone backup…",
             totalPlannedChanges: max(report.plannedChanges.count, report.statistics.totalChangeCount),
             appliedChangeCount: 0,
             currentPath: nil,
@@ -77,6 +83,7 @@ final class BackupOrchestrator: ObservableObject {
 
                 let finishedAt = completion.log.finishedAt
                 let logURL = AppPaths.logsDirectory.appendingPathComponent(completion.log.textLogRelativePath)
+                var postCloneWarnings: [String] = []
 
                 if completion.log.wasCancelled {
                     state = .cancelled(
@@ -84,7 +91,7 @@ final class BackupOrchestrator: ObservableObject {
                             pairID: report.pair.id,
                             startedAt: startedAt,
                             finishedAt: finishedAt,
-                            reason: "Mirror backup cancelled. The target may now be partially synced; the next run must start with a fresh preflight.",
+                            reason: "Clone backup cancelled. The target may now be partially synced; the next run must start with a fresh preflight.",
                             warnings: completion.log.warnings,
                             logFileURL: logURL,
                             log: completion.log
@@ -93,20 +100,47 @@ final class BackupOrchestrator: ObservableObject {
                     return
                 }
 
+                do {
+                    let targetURL = try BookmarkResolver.resolve(report.pair.targetBookmark)
+                    _ = try await snapshotService.postCloneSuccess(
+                        for: report.pair,
+                        targetURL: targetURL,
+                        targetCapabilities: report.currentTargetCapabilities
+                    )
+                } catch {
+                    postCloneWarnings.append("Post-clone action failed: \(error.localizedDescription)")
+                }
+
+                let combinedWarnings = completion.log.warnings + postCloneWarnings
+                let logWithPostCloneWarnings = RunLog(
+                    id: completion.log.id,
+                    pairID: completion.log.pairID,
+                    startedAt: completion.log.startedAt,
+                    finishedAt: completion.log.finishedAt,
+                    exitCode: completion.log.exitCode,
+                    wasCancelled: completion.log.wasCancelled,
+                    stdoutLines: completion.log.stdoutLines,
+                    stderrLines: completion.log.stderrLines,
+                    warnings: combinedWarnings,
+                    appliedChanges: completion.log.appliedChanges,
+                    plannedChanges: completion.log.plannedChanges,
+                    textLogRelativePath: completion.log.textLogRelativePath
+                )
+
                 if completion.log.exitCode == 0 {
                     state = .completed(
                         RunResult(
                             pairID: report.pair.id,
                             startedAt: startedAt,
                             finishedAt: finishedAt,
-                            appliedChangeCount: completion.log.appliedChanges.count,
-                            deletionCount: completion.log.appliedChanges.filter { $0.operation == .delete }.count,
-                            warnings: completion.log.warnings,
+                            appliedChangeCount: logWithPostCloneWarnings.appliedChanges.count,
+                            deletionCount: logWithPostCloneWarnings.appliedChanges.filter { $0.operation == .delete }.count,
+                            warnings: combinedWarnings,
                             logFileURL: logURL,
-                            log: completion.log,
-                            summary: completion.log.warnings.isEmpty
-                                ? "Mirror backup completed successfully."
-                                : "Mirror backup completed with \(completion.log.warnings.count) warning(s)."
+                            log: logWithPostCloneWarnings,
+                            summary: combinedWarnings.isEmpty
+                                ? "Clone backup completed successfully."
+                                : "Clone backup completed with \(combinedWarnings.count) warning(s)."
                         )
                     )
                 } else {
@@ -116,9 +150,9 @@ final class BackupOrchestrator: ObservableObject {
                             startedAt: startedAt,
                             finishedAt: finishedAt,
                             reason: "rsync exited with code \(completion.log.exitCode).",
-                            warnings: completion.log.warnings,
+                            warnings: combinedWarnings,
                             logFileURL: logURL,
-                            log: completion.log
+                            log: logWithPostCloneWarnings
                         )
                     )
                 }
@@ -162,6 +196,7 @@ final class BackupOrchestrator: ObservableObject {
         let pathValidation = BackupPathValidator.validate(source: sourceURL, target: targetURL)
         let currentSourceVolume = try VolumeIdentityResolver.resolve(for: sourceURL)
         let currentTargetVolume = try VolumeIdentityResolver.resolve(for: targetURL)
+        let currentTargetCapabilities = try VolumeIdentityResolver.resolveTargetCapabilities(for: targetURL)
 
         var validationMessages = pathValidation.messages
         if !FileManager.default.isReadableFile(atPath: pathValidation.sourceCanonicalPath) {
@@ -170,9 +205,25 @@ final class BackupOrchestrator: ObservableObject {
         if !FileManager.default.isWritableFile(atPath: pathValidation.targetCanonicalPath) {
             validationMessages.append(.init(severity: .blocking, message: "The selected target folder is not writable by YeOldBackup."))
         }
+        if currentTargetCapabilities.isReadOnly {
+            validationMessages.append(.init(severity: .blocking, message: "The selected target volume is read-only. Choose a writable target before cloning."))
+        }
 
         if pair.targetVolume.uuid != nil, pair.targetVolume.uuid != currentTargetVolume.uuid {
-            validationMessages.append(.init(severity: .blocking, message: "The mounted target volume does not match the saved target drive. Reselect the target before mirroring."))
+            validationMessages.append(.init(severity: .blocking, message: "The mounted target volume does not match the saved target drive. Reselect the target before cloning."))
+        }
+        if pair.targetCapabilities.fileSystemType != TargetCapabilities.unknown.fileSystemType,
+           pair.targetCapabilities.fileSystemType != currentTargetCapabilities.fileSystemType {
+            validationMessages.append(.init(severity: .info, message: "The target file system is now \(currentTargetCapabilities.fileSystemType); it was previously saved as \(pair.targetCapabilities.fileSystemType)."))
+        }
+        if currentTargetCapabilities.supportsSnapshots {
+            if pathValidation.targetCanonicalPath == currentTargetVolume.mountPath {
+                validationMessages.append(.init(severity: .info, message: "The target is a dedicated APFS volume root and is compatible with future clone-history support."))
+            } else {
+                validationMessages.append(.init(severity: .info, message: "The target volume is APFS, but future clone-history support would require using a dedicated APFS target volume instead of a folder inside it."))
+            }
+        } else {
+            validationMessages.append(.init(severity: .info, message: "The target file system (\(currentTargetCapabilities.fileSystemType)) supports live clone mode only in v1."))
         }
 
         let preflight = try await engine.preflight(
@@ -184,6 +235,7 @@ final class BackupOrchestrator: ObservableObject {
                 targetCanonicalPath: pathValidation.targetCanonicalPath,
                 sourceVolume: pair.sourceVolume,
                 targetVolume: pair.targetVolume,
+                targetCapabilities: currentTargetCapabilities,
                 createdAt: pair.createdAt,
                 lastRun: pair.lastRun
             ),
@@ -231,11 +283,13 @@ final class BackupOrchestrator: ObservableObject {
                 targetCanonicalPath: pathValidation.targetCanonicalPath,
                 sourceVolume: currentSourceVolume,
                 targetVolume: currentTargetVolume,
+                targetCapabilities: currentTargetCapabilities,
                 createdAt: pair.createdAt,
                 lastRun: pair.lastRun
             ),
             currentSourceVolume: currentSourceVolume,
             currentTargetVolume: currentTargetVolume,
+            currentTargetCapabilities: currentTargetCapabilities,
             statistics: preflight.statistics,
             plannedChanges: preflight.plannedChanges,
             exclusions: exclusions,
@@ -254,7 +308,7 @@ final class BackupOrchestrator: ObservableObject {
         case .started:
             state = .running(
                 RunProgress(
-                    phase: "Preparing mirror run…",
+                    phase: "Preparing clone run…",
                     totalPlannedChanges: plannedChangeCount,
                     appliedChangeCount: 0,
                     currentPath: nil,
@@ -266,7 +320,7 @@ final class BackupOrchestrator: ObservableObject {
             let current = currentProgress(plannedChangeCount: plannedChangeCount)
             state = .running(
                 RunProgress(
-                    phase: "Mirroring files…",
+                    phase: "Cloning files…",
                     totalPlannedChanges: current.totalPlannedChanges,
                     appliedChangeCount: current.appliedChangeCount + 1,
                     currentPath: change.path,
@@ -278,7 +332,7 @@ final class BackupOrchestrator: ObservableObject {
             let current = currentProgress(plannedChangeCount: plannedChangeCount)
             state = .running(
                 RunProgress(
-                    phase: "Mirroring files…",
+                    phase: "Cloning files…",
                     totalPlannedChanges: current.totalPlannedChanges,
                     appliedChangeCount: current.appliedChangeCount,
                     currentPath: current.currentPath,
@@ -306,7 +360,7 @@ final class BackupOrchestrator: ObservableObject {
             return progress
         }
         return RunProgress(
-            phase: "Preparing mirror run…",
+            phase: "Preparing clone run…",
             totalPlannedChanges: plannedChangeCount,
             appliedChangeCount: 0,
             currentPath: nil,

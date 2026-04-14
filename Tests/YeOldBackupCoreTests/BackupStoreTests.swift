@@ -10,7 +10,7 @@ final class BackupStoreTests: XCTestCase {
         let store = BackupStore(defaults: defaults, baseDirectory: tempRoot, maxStoredRunLogs: 5)
 
         let pair = makePair()
-        let state = PersistedState(settings: .init(schemaVersion: 1, lastSelectedPairID: pair.id), pairs: [pair], runHistory: [])
+        let state = PersistedState(settings: .init(schemaVersion: 2, lastSelectedPairID: pair.id), pairs: [pair], runHistory: [])
         try store.persist(state: state)
 
         let loaded = try store.loadState()
@@ -65,6 +65,7 @@ final class BackupStoreTests: XCTestCase {
             targetCanonicalPath: "/tmp/target",
             sourceVolume: .placeholder(for: "/tmp/source"),
             targetVolume: .placeholder(for: "/tmp/target"),
+            targetCapabilities: .unknown,
             createdAt: Date(),
             lastRun: nil
         )

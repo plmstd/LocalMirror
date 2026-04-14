@@ -42,15 +42,15 @@ struct ContentView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("YeOldBackup")
                         .font(.system(size: 28, weight: .bold))
-                    Text("Mirror-only backup for local folders and external drives.")
+                    Text("Clone backup for local folders and external drives.")
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
                 if let installation = appModel.installation {
                     VStack(alignment: .trailing, spacing: 4) {
-                        Text(installation.isBundled ? "Bundled rsync helper" : "Fallback rsync helper")
+                        Text(installation.displayTitle)
                             .font(.caption.weight(.semibold))
-                            .foregroundStyle(installation.isBundled ? .green : .orange)
+                            .foregroundStyle(installation.kind == .systemProvided ? .green : .orange)
                         Text(installation.versionDescription)
                             .font(.caption)
                             .foregroundStyle(.secondary)
@@ -73,6 +73,20 @@ struct ContentView: View {
                     .background(Color.orange.opacity(0.14))
                     .clipShape(RoundedRectangle(cornerRadius: 10))
             }
+
+            HStack(spacing: 12) {
+                Button("Reveal Logs in Finder") {
+                    appModel.revealLogsInFinder()
+                }
+                .buttonStyle(.bordered)
+
+                Button("Copy Diagnostics") {
+                    appModel.copySupportDiagnostics()
+                }
+                .buttonStyle(.bordered)
+
+                Spacer()
+            }
         }
     }
 
@@ -84,6 +98,17 @@ struct ContentView: View {
 
             selectionRow(title: "Target", path: appModel.targetPath) {
                 appModel.selectDirectory(.target)
+            }
+
+            if let capabilities = appModel.selectedTargetCapabilities {
+                HStack(spacing: 18) {
+                    capabilityPill(title: "Target FS", value: capabilities.fileSystemType)
+                    capabilityPill(title: "History", value: capabilities.historyModeLabel)
+                    if capabilities.isReadOnly {
+                        capabilityPill(title: "Access", value: "Read-only")
+                    }
+                    Spacer()
+                }
             }
 
             HStack(spacing: 12) {
@@ -120,6 +145,20 @@ struct ContentView: View {
         }
     }
 
+    private func capabilityPill(title: String, value: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Text(value)
+                .font(.caption.weight(.semibold))
+        }
+        .padding(.vertical, 8)
+        .padding(.horizontal, 10)
+        .background(Color.secondary.opacity(0.08))
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+    }
+
     private var savedPairsSection: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Saved Backup Pairs")
@@ -131,6 +170,14 @@ struct ContentView: View {
                 }
                 TableColumn("Target") { pair in
                     Text(pair.targetName).help(pair.targetCanonicalPath)
+                }
+                TableColumn("Target FS") { pair in
+                    Text(pair.targetCapabilities.fileSystemType)
+                        .foregroundStyle(.secondary)
+                }
+                TableColumn("History") { pair in
+                    Text(pair.targetCapabilities.historyModeLabel)
+                        .foregroundStyle(pair.targetCapabilities.supportsSnapshots ? .green : .secondary)
                 }
                 TableColumn("Last Run") { pair in
                     if let lastRun = pair.lastRun {
@@ -190,7 +237,7 @@ struct ContentView: View {
 
             switch appModel.runState {
             case .idle:
-                Text("Select a source and target folder, then start a mirror backup. Every run now starts with a preflight review.")
+                Text("Select a source and target folder, then start a clone backup. Every run now starts with a preflight review.")
                     .foregroundStyle(.secondary)
 
             case .preflighting:
@@ -200,7 +247,7 @@ struct ContentView: View {
             case .review(let report):
                 VStack(alignment: .leading, spacing: 8) {
                     Text(report.summaryLine)
-                    Text("Review is open. Confirm the planned changes before the mirror run starts.")
+                    Text("Review is open. Confirm the planned changes before the clone run starts.")
                         .foregroundStyle(.secondary)
                 }
 
@@ -243,14 +290,14 @@ struct ContentView: View {
                 terminalStateCard(
                     title: failure.reason,
                     tone: .red,
-                    subtitle: failure.warnings.isEmpty ? "Mirror backup failed." : "\(failure.warnings.count) warning(s) were captured before the failure."
+                    subtitle: failure.warnings.isEmpty ? "Clone backup failed." : "\(failure.warnings.count) warning(s) were captured before the failure."
                 )
 
             case .cancelled(let failure):
                 terminalStateCard(
                     title: failure.reason,
                     tone: .orange,
-                    subtitle: "Review the full log before running another mirror backup."
+                    subtitle: "Review the full log before running another clone backup."
                 )
             }
         }
@@ -271,6 +318,12 @@ struct ContentView: View {
                 }
                 .buttonStyle(.bordered)
                 .disabled(!appModel.canOpenLatestLog)
+
+                Button("Reveal Logs in Finder") {
+                    appModel.revealLogsInFinder()
+                }
+                .buttonStyle(.bordered)
+
                 Spacer()
             }
         }
@@ -279,14 +332,14 @@ struct ContentView: View {
     private var footerControls: some View {
         HStack {
             if appModel.canStopBackup {
-                Button("Stop Mirror Backup") {
-                    appModel.stopMirrorBackup()
+                Button("Stop Clone Backup") {
+                    appModel.stopCloneBackup()
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(.red)
             } else {
-                Button("Mirror Backup") {
-                    appModel.beginMirrorBackup()
+                Button("Start Clone Backup") {
+                    appModel.beginCloneBackup()
                 }
                 .buttonStyle(.borderedProminent)
                 .disabled(!appModel.canStartBackup)
@@ -324,7 +377,7 @@ private struct PreflightReviewSheet: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Preflight Review")
                         .font(.title2.bold())
-                    Text("Every mirror run must be reviewed before it starts.")
+                    Text("Every clone run must be reviewed before it starts.")
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
@@ -343,10 +396,21 @@ private struct PreflightReviewSheet: View {
                     keyValue("Target", value: report.pair.targetCanonicalPath)
                     keyValue("Source Volume", value: report.currentSourceVolume.displayName)
                     keyValue("Target Volume", value: report.currentTargetVolume.displayName)
+                    keyValue("Target File System", value: report.currentTargetCapabilities.fileSystemType)
                     keyValue("Planned Changes", value: "\(report.statistics.totalChangeCount)")
                     keyValue("Planned Deletions", value: "\(report.statistics.deletionCount)")
                     keyValue("Estimated Transfer", value: byteCount(report.statistics.estimatedTransferBytes))
                     keyValue("Free Space", value: report.availableFreeBytes.map(byteCount) ?? "Unavailable")
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+
+            GroupBox("Target Mode") {
+                VStack(alignment: .leading, spacing: 8) {
+                    keyValue("Current Mode", value: report.currentTargetCapabilities.historyModeLabel)
+                    Text(report.snapshotReadinessSummary)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -411,7 +475,7 @@ private struct PreflightReviewSheet: View {
 
             if report.requiresTypedConfirmation {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("Type `\(report.confirmationToken ?? "")` to confirm this destructive mirror operation.")
+                    Text("Type `\(report.confirmationToken ?? "")` to confirm this destructive clone operation.")
                         .font(.headline)
                     TextField("Confirmation token", text: $confirmationInput)
                         .textFieldStyle(.roundedBorder)
@@ -421,7 +485,7 @@ private struct PreflightReviewSheet: View {
             HStack {
                 Button("Cancel", action: onCancel)
                 Spacer()
-                Button("Mirror Backup Now") {
+                Button("Start Clone Now") {
                     onApprove(confirmationInput)
                 }
                 .buttonStyle(.borderedProminent)

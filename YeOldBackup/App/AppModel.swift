@@ -48,6 +48,17 @@ final class AppModel: ObservableObject {
         latestLogURL != nil
     }
 
+    var canRevealLogsDirectory: Bool {
+        FileManager.default.fileExists(atPath: AppPaths.logsDirectory.path)
+    }
+
+    var selectedTargetCapabilities: TargetCapabilities? {
+        if let targetURL {
+            return try? VolumeIdentityResolver.resolveTargetCapabilities(for: targetURL)
+        }
+        return selectedPair?.targetCapabilities
+    }
+
     var canStopBackup: Bool {
         switch runState {
         case .running:
@@ -81,8 +92,8 @@ final class AppModel: ObservableObject {
                 load(pair: pair)
             }
 
-            if let installation, !installation.isBundled {
-                statusNote = "Bundled rsync helper is unavailable or unhealthy; YeOldBackup is using a fallback binary."
+            if let installation, installation.kind != .systemProvided {
+                statusNote = "YeOldBackup is using a custom rsync binary at \(installation.binaryURL.path)."
             }
         } catch {
             runState = .failed(
@@ -116,14 +127,14 @@ final class AppModel: ObservableObject {
         }
     }
 
-    func beginMirrorBackup() {
+    func beginCloneBackup() {
         guard let sourceURL, let targetURL else {
             runState = .failed(
                 RunFailure(
                     pairID: nil,
                     startedAt: nil,
                     finishedAt: Date(),
-                    reason: "Select both a source and a target folder before starting a mirror backup.",
+                    reason: "Select both a source and a target folder before starting a clone backup.",
                     warnings: [],
                     logFileURL: nil,
                     log: nil
@@ -168,7 +179,7 @@ final class AppModel: ObservableObject {
         orchestrator.dismissReview()
     }
 
-    func stopMirrorBackup() {
+    func stopCloneBackup() {
         orchestrator.requestCancellation()
     }
 
@@ -183,6 +194,24 @@ final class AppModel: ObservableObject {
         }
         statusNote = nil
         NSWorkspace.shared.open(url)
+    }
+
+    func revealLogsInFinder() {
+        do {
+            try FileManager.default.createDirectory(at: AppPaths.logsDirectory, withIntermediateDirectories: true, attributes: nil)
+            statusNote = nil
+            NSWorkspace.shared.activateFileViewerSelecting([AppPaths.logsDirectory])
+        } catch {
+            statusNote = "YeOldBackup could not reveal the logs directory: \(error.localizedDescription)"
+        }
+    }
+
+    func copySupportDiagnostics() {
+        let diagnostics = makeSupportDiagnostics()
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        let success = pasteboard.setString(diagnostics, forType: .string)
+        statusNote = success ? "Support diagnostics copied to the clipboard." : "YeOldBackup could not copy support diagnostics to the clipboard."
     }
 
     func deleteSelectedPairs(_ ids: Set<UUID>) {
@@ -263,6 +292,7 @@ final class AppModel: ObservableObject {
         let targetBookmark = try BookmarkResolver.makeBookmark(for: targetURL)
         let sourceCanonical = BackupPathValidator.canonicalPath(for: sourceURL)
         let targetCanonical = BackupPathValidator.canonicalPath(for: targetURL)
+        let currentTargetCapabilities = try VolumeIdentityResolver.resolveTargetCapabilities(for: targetURL)
 
         if let selectedPairID,
            let existing = pairs.first(where: { $0.id == selectedPairID }) {
@@ -274,6 +304,7 @@ final class AppModel: ObservableObject {
                 targetCanonicalPath: targetCanonical,
                 sourceVolume: existing.sourceVolume,
                 targetVolume: existing.targetVolume,
+                targetCapabilities: currentTargetCapabilities,
                 createdAt: existing.createdAt,
                 lastRun: existing.lastRun
             )
@@ -288,6 +319,7 @@ final class AppModel: ObservableObject {
                 targetCanonicalPath: targetCanonical,
                 sourceVolume: existing.sourceVolume,
                 targetVolume: existing.targetVolume,
+                targetCapabilities: currentTargetCapabilities,
                 createdAt: existing.createdAt,
                 lastRun: existing.lastRun
             )
@@ -301,6 +333,7 @@ final class AppModel: ObservableObject {
             targetCanonicalPath: targetCanonical,
             sourceVolume: try VolumeIdentityResolver.resolve(for: sourceURL),
             targetVolume: try VolumeIdentityResolver.resolve(for: targetURL),
+            targetCapabilities: currentTargetCapabilities,
             createdAt: Date(),
             lastRun: nil
         )
@@ -356,6 +389,7 @@ final class AppModel: ObservableObject {
             if let index = pairs.firstIndex(where: { $0.id == pairID }) {
                 pairs[index].sourceVolume = try VolumeIdentityResolver.resolve(for: BookmarkResolver.resolve(pairs[index].sourceBookmark))
                 pairs[index].targetVolume = try VolumeIdentityResolver.resolve(for: BookmarkResolver.resolve(pairs[index].targetBookmark))
+                pairs[index].targetCapabilities = try VolumeIdentityResolver.resolveTargetCapabilities(for: BookmarkResolver.resolve(pairs[index].targetBookmark))
                 pairs[index].lastRun = BackupPairLastRun(date: historyItem.finishedAt, status: outcome, warningCount: historyItem.warningCount, logID: historyItem.id)
                 pairs.sort(by: sortPairs)
             }
@@ -441,5 +475,50 @@ final class AppModel: ObservableObject {
             }
             return nil
         }
+    }
+
+    private var selectedPair: BackupPair? {
+        guard let selectedPairID else { return nil }
+        return pairs.first(where: { $0.id == selectedPairID })
+    }
+
+    private func makeSupportDiagnostics() -> String {
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "Unknown"
+        let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "Unknown"
+        let targetCapabilities = selectedTargetCapabilities
+        let runStateDescription: String
+        switch runState {
+        case .idle:
+            runStateDescription = "idle"
+        case .preflighting:
+            runStateDescription = "preflighting"
+        case .review:
+            runStateDescription = "review"
+        case .running:
+            runStateDescription = "running"
+        case .cancelling:
+            runStateDescription = "cancelling"
+        case .completed:
+            runStateDescription = "completed"
+        case .failed:
+            runStateDescription = "failed"
+        case .cancelled:
+            runStateDescription = "cancelled"
+        }
+
+        let lines = [
+            "YeOldBackup Diagnostics",
+            "App Version: \(version) (\(build))",
+            "macOS: \(ProcessInfo.processInfo.operatingSystemVersionString)",
+            "rsync Path: \(installation?.binaryURL.path ?? "Unavailable")",
+            "rsync Version: \(installation?.versionDescription ?? "Unavailable")",
+            "Source Path: \(sourcePath.isEmpty ? "None" : sourcePath)",
+            "Target Path: \(targetPath.isEmpty ? "None" : targetPath)",
+            "Target File System: \(targetCapabilities?.fileSystemType ?? "Unknown")",
+            "Target Snapshot Readiness: \(targetCapabilities?.historyModeLabel ?? "Unknown")",
+            "Logs Directory: \(AppPaths.logsDirectory.path)",
+            "Run State: \(runStateDescription)"
+        ]
+        return lines.joined(separator: "\n")
     }
 }

@@ -28,29 +28,6 @@
 		};
 /* End PBXFrameworksBuildPhase section */
 
-/* Begin PBXShellScriptBuildPhase section */
-		B28FCFC62DB6421A00A1F512 /* Install Bundled Rsync */ = {
-			isa = PBXShellScriptBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			inputFileListPaths = (
-			);
-			inputPaths = (
-				"$(SRCROOT)/YeOldBackup/Helpers/rsync",
-			);
-			name = "Install Bundled Rsync";
-			outputFileListPaths = (
-			);
-			outputPaths = (
-				"$(TARGET_BUILD_DIR)/$(CONTENTS_FOLDER_PATH)/Helpers/rsync",
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = /bin/sh;
-			shellScript = "set -e\nHELPER_PATH=\"${TARGET_BUILD_DIR}/${CONTENTS_FOLDER_PATH}/Helpers/rsync\"\nmkdir -p \"${TARGET_BUILD_DIR}/${CONTENTS_FOLDER_PATH}/Helpers\"\ncp \"${SRCROOT}/YeOldBackup/Helpers/rsync\" \"${HELPER_PATH}\"\nchmod 755 \"${HELPER_PATH}\"\nif [ \"${CODE_SIGNING_ALLOWED}\" = \"YES\" ]; then\n  SIGN_IDENTITY=\"${EXPANDED_CODE_SIGN_IDENTITY}\"\n  if [ -z \"${SIGN_IDENTITY}\" ]; then\n    SIGN_IDENTITY=\"-\"\n  fi\n  /usr/bin/codesign --force --sign \"${SIGN_IDENTITY}\" --timestamp=none \"${HELPER_PATH}\"\nfi\n";
-		};
-/* End PBXShellScriptBuildPhase section */
-
 /* Begin PBXGroup section */
 		B28FCFAB2DB6421A00A1F512 = {
 			isa = PBXGroup;
@@ -77,7 +54,6 @@
 			buildPhases = (
 				B28FCFB02DB6421A00A1F512 /* Sources */,
 				B28FCFB12DB6421A00A1F512 /* Frameworks */,
-				B28FCFC62DB6421A00A1F512 /* Install Bundled Rsync */,
 				B28FCFB22DB6421A00A1F512 /* Resources */,
 			);
 			buildRules = (

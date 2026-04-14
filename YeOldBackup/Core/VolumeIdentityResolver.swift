@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 
 enum VolumeIdentityResolver {
@@ -17,6 +18,24 @@ enum VolumeIdentityResolver {
             displayName: displayName.isEmpty ? volumeURL.lastPathComponent : displayName,
             mountPath: mountPath,
             isRemovable: values.volumeIsRemovable ?? false
+        )
+    }
+
+    static func resolveTargetCapabilities(for url: URL) throws -> TargetCapabilities {
+        let mountURL = URL(fileURLWithPath: mountPath(for: url), isDirectory: true)
+        let resourceKeys: Set<URLResourceKey> = [
+            .volumeLocalizedFormatDescriptionKey,
+            .volumeIsReadOnlyKey
+        ]
+        let values = try mountURL.resourceValues(forKeys: resourceKeys)
+        let fileSystemType = fileSystemName(for: mountURL) ?? values.volumeLocalizedFormatDescription ?? "Unknown"
+        let normalized = fileSystemType.lowercased()
+        let isAPFS = normalized == "apfs" || normalized.contains("apple file system")
+        return TargetCapabilities(
+            fileSystemType: fileSystemType,
+            isAPFS: isAPFS,
+            supportsSnapshots: isAPFS,
+            isReadOnly: values.volumeIsReadOnly ?? false
         )
     }
 
@@ -48,5 +67,18 @@ enum VolumeIdentityResolver {
             return path
         }
         return "/Volumes/" + components[1]
+    }
+
+    private static func fileSystemName(for url: URL) -> String? {
+        var stats = statfs()
+        let result = url.path.withCString { pathPointer in
+            statfs(pathPointer, &stats)
+        }
+        guard result == 0 else { return nil }
+        return withUnsafePointer(to: &stats.f_fstypename.0) {
+            $0.withMemoryRebound(to: CChar.self, capacity: Int(MFSTYPENAMELEN)) {
+                String(cString: $0)
+            }
+        }
     }
 }

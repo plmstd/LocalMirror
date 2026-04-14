@@ -1,9 +1,23 @@
 import Foundation
 
+enum SyncInstallationKind: String, Hashable {
+    case systemProvided
+    case custom
+}
+
 struct SyncInstallation: Hashable {
     let binaryURL: URL
     let versionDescription: String
-    let isBundled: Bool
+    let kind: SyncInstallationKind
+
+    var displayTitle: String {
+        switch kind {
+        case .systemProvided:
+            return "System rsync"
+        case .custom:
+            return "Custom rsync"
+        }
+    }
 }
 
 struct VolumeIdentity: Codable, Hashable {
@@ -35,6 +49,24 @@ struct BackupPairLastRun: Codable, Hashable {
     var logID: UUID
 }
 
+struct TargetCapabilities: Codable, Hashable {
+    var fileSystemType: String
+    var isAPFS: Bool
+    var supportsSnapshots: Bool
+    var isReadOnly: Bool
+
+    static let unknown = TargetCapabilities(
+        fileSystemType: "Unknown",
+        isAPFS: false,
+        supportsSnapshots: false,
+        isReadOnly: false
+    )
+
+    var historyModeLabel: String {
+        supportsSnapshots ? "APFS-ready" : "Clone-only"
+    }
+}
+
 struct BackupPair: Codable, Identifiable, Hashable {
     var id: UUID
     var sourceBookmark: Data
@@ -43,6 +75,7 @@ struct BackupPair: Codable, Identifiable, Hashable {
     var targetCanonicalPath: String
     var sourceVolume: VolumeIdentity
     var targetVolume: VolumeIdentity
+    var targetCapabilities: TargetCapabilities
     var createdAt: Date
     var lastRun: BackupPairLastRun?
 
@@ -52,6 +85,57 @@ struct BackupPair: Codable, Identifiable, Hashable {
 
     var targetName: String {
         URL(fileURLWithPath: targetCanonicalPath).lastPathComponent
+    }
+
+    init(
+        id: UUID,
+        sourceBookmark: Data,
+        targetBookmark: Data,
+        sourceCanonicalPath: String,
+        targetCanonicalPath: String,
+        sourceVolume: VolumeIdentity,
+        targetVolume: VolumeIdentity,
+        targetCapabilities: TargetCapabilities,
+        createdAt: Date,
+        lastRun: BackupPairLastRun?
+    ) {
+        self.id = id
+        self.sourceBookmark = sourceBookmark
+        self.targetBookmark = targetBookmark
+        self.sourceCanonicalPath = sourceCanonicalPath
+        self.targetCanonicalPath = targetCanonicalPath
+        self.sourceVolume = sourceVolume
+        self.targetVolume = targetVolume
+        self.targetCapabilities = targetCapabilities
+        self.createdAt = createdAt
+        self.lastRun = lastRun
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case sourceBookmark
+        case targetBookmark
+        case sourceCanonicalPath
+        case targetCanonicalPath
+        case sourceVolume
+        case targetVolume
+        case targetCapabilities
+        case createdAt
+        case lastRun
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        sourceBookmark = try container.decode(Data.self, forKey: .sourceBookmark)
+        targetBookmark = try container.decode(Data.self, forKey: .targetBookmark)
+        sourceCanonicalPath = try container.decode(String.self, forKey: .sourceCanonicalPath)
+        targetCanonicalPath = try container.decode(String.self, forKey: .targetCanonicalPath)
+        sourceVolume = try container.decode(VolumeIdentity.self, forKey: .sourceVolume)
+        targetVolume = try container.decode(VolumeIdentity.self, forKey: .targetVolume)
+        targetCapabilities = try container.decodeIfPresent(TargetCapabilities.self, forKey: .targetCapabilities) ?? .unknown
+        createdAt = try container.decode(Date.self, forKey: .createdAt)
+        lastRun = try container.decodeIfPresent(BackupPairLastRun.self, forKey: .lastRun)
     }
 }
 
@@ -180,6 +264,7 @@ struct PreflightReport: Hashable {
     var pair: BackupPair
     var currentSourceVolume: VolumeIdentity
     var currentTargetVolume: VolumeIdentity
+    var currentTargetCapabilities: TargetCapabilities
     var statistics: SyncStatistics
     var plannedChanges: [ChangeRecord]
     var exclusions: [String]
@@ -208,6 +293,21 @@ struct PreflightReport: Hashable {
             return "Source and target are already aligned."
         }
         return "\(statistics.totalChangeCount) planned change(s), including \(statistics.deletionCount) deletion(s)."
+    }
+
+    var targetIsDedicatedVolume: Bool {
+        pair.targetCanonicalPath == currentTargetVolume.mountPath
+    }
+
+    var snapshotReadinessSummary: String {
+        if currentTargetCapabilities.supportsSnapshots {
+            if targetIsDedicatedVolume {
+                return "The target is an APFS volume root. Clone history can be added here in a later release."
+            }
+            return "The target volume is APFS, but future clone history would require using a dedicated APFS target volume instead of a folder inside it."
+        }
+
+        return "The target file system (\(currentTargetCapabilities.fileSystemType)) supports live clone mode only in v1."
     }
 }
 
@@ -239,7 +339,7 @@ struct AppSettings: Codable, Hashable {
     var schemaVersion: Int
     var lastSelectedPairID: UUID?
 
-    static let current = AppSettings(schemaVersion: 1, lastSelectedPairID: nil)
+    static let current = AppSettings(schemaVersion: 2, lastSelectedPairID: nil)
 }
 
 struct PersistedState: Hashable {

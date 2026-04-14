@@ -1,37 +1,40 @@
 # YeOldBackup
 
-YeOldBackup is a macOS **mirror backup** utility for local folders and external drives. It keeps the target in sync with the source, including deletions, but now routes every run through a structured preflight review before the destructive phase begins.
+YeOldBackup is a macOS **clone backup** utility for local folders and external drives. It keeps the target as an immediately usable copy of the source, including deletions, and routes every run through a structured preflight review before the destructive phase begins.
 
 ## What Changed
 
-- Bundled `rsync` helper inside the app instead of depending on the live `/usr/bin/rsync` path at runtime.
+- System `/usr/bin/rsync` health-check at startup instead of bundling a helper in the app.
 - File-backed persistence under `~/Library/Application Support/YeOldBackup/` for settings, saved pairs, run history, and full logs.
-- Mandatory preflight review for **every** mirror run.
+- Mandatory preflight review for **every** clone run.
 - Canonical-path validation to block unsafe selections such as same-folder, nested-folder, home-folder, or protected top-level targets.
 - Target-volume identity validation for external drives.
+- Target capability tracking for filesystem type, APFS readiness, read-only state, and future history support.
 - Typed confirmation for high-risk destructive runs.
 - Structured run lifecycle with explicit `preflighting`, `review`, `running`, `cancelling`, `completed`, `failed`, and `cancelled` states.
-- Full log retention on disk with an in-app “Open Full Log” action.
+- Full log retention on disk with in-app log reveal and support diagnostics actions.
+- A no-op snapshot service boundary so APFS clone history can be added in a later release without another architecture rewrite.
 
 ## Safety Model
 
 YeOldBackup is intentionally conservative:
 
-- It is **mirror-only**.
+- It is **clone-only** in v1.
 - The target **will be made to match the source**.
 - Files missing from the source **will be removed from the target**.
 - Every run starts with a dry-run preflight that computes the planned changes.
 - Runs are blocked if the selected target is unsafe or the mounted target drive does not match the saved drive identity.
-- High-risk runs require the user to type the target volume or folder name exactly before the mirror phase can start.
+- High-risk runs require the user to type the target volume or folder name exactly before the clone phase can start.
+- APFS history is not enabled yet, but the app records target filesystem capabilities so that dedicated APFS targets can support clone history later.
 
 Network shares are currently treated as **best effort only**. The hardened workflow is optimized for local folders and removable drives.
 
 ## App Layout
 
 - `YeOldBackup/Core`
-  - Shared models, path validation, volume identity resolution, rsync output parsing, orchestrator.
+  - Shared models, path validation, volume identity resolution, rsync output parsing, orchestrator, snapshot-service abstraction.
 - `YeOldBackup/Services`
-  - Bundled-rsync discovery and the concrete `RsyncSyncEngine`.
+  - System-rsync discovery and the concrete `RsyncSyncEngine`.
 - `YeOldBackup/Storage`
   - File-backed persistence and migration from the previous `@AppStorage` layout.
 - `YeOldBackup/App`
@@ -64,5 +67,5 @@ The project ships as a direct-download macOS app, not a Mac App Store app.
 ## Important Notes
 
 - Full Disk Access may still be required for some source trees or destination volumes. The app no longer hard-blocks folder selection when FDA is missing; instead, it reports permission issues during preflight.
-- Cancelling a run does not guarantee a clean rollback. A cancelled mirror run should be treated as a partially synced target until the next successful preflight and mirror run completes.
-- The vendored helper in this repo is the current environment’s universal `rsync` binary. If you want a newer pinned release later, replace `YeOldBackup/Helpers/rsync` and re-run the signing/notarization flow.
+- Cancelling a run does not guarantee a clean rollback. A cancelled clone run should be treated as a partially synced target until the next successful preflight and clone run completes.
+- v1 intentionally uses the macOS-provided `/usr/bin/rsync`. If a future release ships a pinned custom engine, the startup health-check and diagnostics already surface which binary is active.

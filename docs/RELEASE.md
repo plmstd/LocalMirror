@@ -9,7 +9,7 @@
 ## Release Checklist
 
 1. Run `swift test`.
-2. Run a local Debug build and verify the bundled `rsync` helper is present in the built app bundle.
+2. Run a local Debug build and verify the app reports the expected `/usr/bin/rsync` installation in the header or copied diagnostics output.
 3. Build the signed Release app with `scripts/build-release.sh`.
 4. Submit the app with `scripts/notarize-app.sh`.
 5. Staple the notarization ticket.
@@ -30,11 +30,12 @@
 - Saved external drive missing
 - Different external drive mounted at the same path
 - Permission-denied subtree in the source
-- Cancel during an active mirror run
+- Cancel during an active clone run
 - Open the full log after success, failure, and cancellation
+- Reveal the logs directory and copy diagnostics after a failed run
 
 ## Signing and Notarization Notes
 
 - The app is intended for direct download with hardened runtime enabled.
-- The bundled `rsync` helper must be signed as part of the app bundle.
-- If you replace the helper binary, rebuild and re-notarize before distribution.
+- v1 uses the macOS-provided `/usr/bin/rsync`; no helper binary is bundled in the app.
+- If a later release introduces a custom helper, rebuild and re-notarize before distribution.

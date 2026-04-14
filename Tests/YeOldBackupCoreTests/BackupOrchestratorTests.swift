@@ -103,6 +103,7 @@ final class BackupOrchestratorTests: XCTestCase {
             targetCanonicalPath: target.path,
             sourceVolume: try VolumeIdentityResolver.resolve(for: source),
             targetVolume: try VolumeIdentityResolver.resolve(for: target),
+            targetCapabilities: try VolumeIdentityResolver.resolveTargetCapabilities(for: target),
             createdAt: Date(),
             lastRun: nil
         )
@@ -122,7 +123,7 @@ private final class FakeSyncEngine: SyncEngine {
     var isRunning = false
 
     func validateInstallation() throws -> SyncInstallation {
-        SyncInstallation(binaryURL: URL(fileURLWithPath: "/tmp/rsync"), versionDescription: "test", isBundled: true)
+        SyncInstallation(binaryURL: URL(fileURLWithPath: "/tmp/rsync"), versionDescription: "test", kind: .custom)
     }
 
     func preflight(pair: BackupPair, exclusions: [String]) async throws -> SyncPreflightResult {

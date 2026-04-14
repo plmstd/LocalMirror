@@ -217,7 +217,7 @@ final class RsyncSyncEngine: SyncEngine {
     private func preflightFailureMessage(for diagnostics: CommandDiagnostics) -> String {
         if diagnostics.terminationReason == .signal {
             if diagnostics.terminationStatus == 9 {
-                return "Dry run was terminated by signal 9. The bundled rsync helper may not be signed correctly for this build."
+                return "Dry run was terminated by signal 9."
             }
             return "Dry run was terminated by signal \(diagnostics.terminationStatus)."
         }
