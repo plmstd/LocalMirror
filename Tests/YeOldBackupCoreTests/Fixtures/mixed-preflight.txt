@@ -1,0 +1,9 @@
+*deleting old-1
+*deleting old-2
+ITEM|>f+++++++|Documents/new.txt
+ITEM|>f.st....|Documents/updated.txt
+ITEM|.f..t....|Documents/meta.txt
+Number of files: 12
+Number of files transferred: 3
+Number of deleted files: 2
+Total transferred file size: 10 KB
