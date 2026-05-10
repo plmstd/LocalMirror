@@ -50,4 +50,15 @@ final class RsyncOutputParserTests: XCTestCase {
         XCTAssertEqual(progress?.percentComplete, 1)
         XCTAssertEqual(progress?.isCompleted, true)
     }
+
+    func testParseTransferProgressDoesNotTreatIntermediateFullPercentAsComplete() {
+        let progress = RsyncOutputParser.parseTransferProgress(
+            from: "        8388608 100% 480.01KB/s   00:00:00",
+            currentPath: "large.bin"
+        )
+
+        XCTAssertEqual(progress?.path, "large.bin")
+        XCTAssertEqual(progress?.percentComplete, 1)
+        XCTAssertEqual(progress?.isCompleted, false)
+    }
 }

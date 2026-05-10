@@ -174,7 +174,7 @@ enum RsyncOutputParser {
             bytesTransferred: bytesTransferred,
             estimatedFileBytes: estimatedFileBytes,
             percentComplete: normalizedPercent,
-            isCompleted: trimmed.contains("(xfer#") || percentComplete >= 100
+            isCompleted: trimmed.contains("(xfer#")
         )
     }
 }

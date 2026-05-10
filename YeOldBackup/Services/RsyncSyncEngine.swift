@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 
 private actor LineAccumulator {
@@ -22,6 +23,13 @@ final class RsyncSyncEngine: SyncEngine, @unchecked Sendable {
         var terminationReason: CommandTerminationReason
         var stdout: [String]
         var stderr: [String]
+    }
+
+    private struct StandardOutputChannel {
+        var readDescriptor: Int32
+        var parentWriteHandle: FileHandle
+        var retainedReadHandle: FileHandle?
+        var shouldCloseReadDescriptor: Bool
     }
 
     private let locator: RsyncBinaryLocator
@@ -165,10 +173,10 @@ final class RsyncSyncEngine: SyncEngine, @unchecked Sendable {
         process.arguments = arguments
         process.environment = environment
 
-        let stdoutPipe = Pipe()
+        let stdoutChannel = try makeStandardOutputChannel(usePseudoTerminal: arguments.contains("--progress"))
         let stderrPipe = Pipe()
-        process.standardOutput = stdoutPipe
-        process.standardError = stderrPipe
+        process.standardOutput = stdoutChannel.parentWriteHandle
+        process.standardError = stderrPipe.fileHandleForWriting
 
         let stdoutLines = LineAccumulator()
         let stderrLines = LineAccumulator()
@@ -183,7 +191,13 @@ final class RsyncSyncEngine: SyncEngine, @unchecked Sendable {
         let stdoutTask = Task<ChangeRecord?, Error> {
             var inFlightTransferChange: ChangeRecord?
 
-            try await readDelimitedOutput(from: stdoutPipe.fileHandleForReading) { line in
+            defer {
+                if stdoutChannel.shouldCloseReadDescriptor {
+                    close(stdoutChannel.readDescriptor)
+                }
+            }
+
+            try await readDelimitedOutput(from: stdoutChannel.readDescriptor) { line in
                 await stdoutLines.append(line)
                 guard let liveEventHandler else { return }
                 if let change = RsyncOutputParser.parseChanges(from: [line]).first {
@@ -214,7 +228,7 @@ final class RsyncSyncEngine: SyncEngine, @unchecked Sendable {
         }
 
         let stderrTask = Task {
-            try await readDelimitedOutput(from: stderrPipe.fileHandleForReading) { line in
+            try await readDelimitedOutput(from: stderrPipe.fileHandleForReading.fileDescriptor) { line in
                 await stderrLines.append(line)
                 guard let liveEventHandler else { return }
                 if !line.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -225,6 +239,8 @@ final class RsyncSyncEngine: SyncEngine, @unchecked Sendable {
 
         let exitCodeTask = Task<(Int32, CommandTerminationReason), Error> {
             try process.run()
+            try? stdoutChannel.parentWriteHandle.close()
+            try? stderrPipe.fileHandleForWriting.close()
             if let liveEventHandler {
                 await liveEventHandler(.started(Date()))
             }
@@ -261,6 +277,8 @@ final class RsyncSyncEngine: SyncEngine, @unchecked Sendable {
                 stderr: await stderrLines.snapshot()
             )
         } catch {
+            try? stdoutChannel.parentWriteHandle.close()
+            try? stderrPipe.fileHandleForWriting.close()
             stateQueue.sync {
                 self.currentProcess = nil
             }
@@ -268,14 +286,54 @@ final class RsyncSyncEngine: SyncEngine, @unchecked Sendable {
         }
     }
 
+    private func makeStandardOutputChannel(usePseudoTerminal: Bool) throws -> StandardOutputChannel {
+        if usePseudoTerminal {
+            var masterDescriptor: Int32 = -1
+            var slaveDescriptor: Int32 = -1
+            guard openpty(&masterDescriptor, &slaveDescriptor, nil, nil, nil) == 0 else {
+                throw BackupError.rsyncLaunchFailed("Could not create a pseudo-terminal for rsync progress output.")
+            }
+
+            return StandardOutputChannel(
+                readDescriptor: masterDescriptor,
+                parentWriteHandle: FileHandle(fileDescriptor: slaveDescriptor, closeOnDealloc: true),
+                retainedReadHandle: nil,
+                shouldCloseReadDescriptor: true
+            )
+        }
+
+        let pipe = Pipe()
+        return StandardOutputChannel(
+            readDescriptor: pipe.fileHandleForReading.fileDescriptor,
+            parentWriteHandle: pipe.fileHandleForWriting,
+            retainedReadHandle: pipe.fileHandleForReading,
+            shouldCloseReadDescriptor: false
+        )
+    }
+
     private func readDelimitedOutput(
-        from handle: FileHandle,
+        from descriptor: Int32,
         handler: @escaping (String) async -> Void
     ) async throws {
         var buffer = Data()
         var previousWasCarriageReturn = false
 
-        for try await byte in handle.bytes {
+        while true {
+            var byte: UInt8 = 0
+            let bytesRead = Darwin.read(descriptor, &byte, 1)
+            if bytesRead == 0 {
+                break
+            }
+            if bytesRead < 0 {
+                if errno == EINTR {
+                    continue
+                }
+                if errno == EIO {
+                    break
+                }
+                throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+            }
+
             switch byte {
             case 0x0D, 0x0A:
                 if previousWasCarriageReturn && byte == 0x0A {
