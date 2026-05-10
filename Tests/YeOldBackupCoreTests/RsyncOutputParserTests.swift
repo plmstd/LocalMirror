@@ -26,4 +26,28 @@ final class RsyncOutputParserTests: XCTestCase {
         XCTAssertEqual(RsyncOutputParser.parseByteCount("2 MB"), 2 * 1_024 * 1_024)
         XCTAssertEqual(RsyncOutputParser.parseByteCount("1 GB"), 1_024 * 1_024 * 1_024)
     }
+
+    func testParseTransferProgressParsesCarriageReturnStyleProgressLine() {
+        let progress = RsyncOutputParser.parseTransferProgress(
+            from: "         163840  16%   64.12KB/s   00:00:12",
+            currentPath: "large.bin"
+        )
+
+        XCTAssertEqual(progress?.path, "large.bin")
+        XCTAssertEqual(progress?.bytesTransferred, 163_840)
+        XCTAssertEqual(progress?.estimatedFileBytes, 1_024_000)
+        XCTAssertEqual(progress?.percentComplete, 0.16)
+        XCTAssertEqual(progress?.isCompleted, false)
+    }
+
+    func testParseTransferProgressMarksFinalTransferLineAsCompleted() {
+        let progress = RsyncOutputParser.parseTransferProgress(
+            from: "        8000000 100% 304.59MB/s   00:00:00 (xfer#1, to-check=1/2)",
+            currentPath: "large.bin"
+        )
+
+        XCTAssertEqual(progress?.path, "large.bin")
+        XCTAssertEqual(progress?.percentComplete, 1)
+        XCTAssertEqual(progress?.isCompleted, true)
+    }
 }

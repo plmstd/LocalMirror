@@ -5,7 +5,7 @@ enum SnapshotPostCloneResult: Hashable {
     case created(String)
 }
 
-protocol SnapshotService: AnyObject {
+protocol SnapshotService: AnyObject, Sendable {
     func postCloneSuccess(
         for pair: BackupPair,
         targetURL: URL,
@@ -13,7 +13,7 @@ protocol SnapshotService: AnyObject {
     ) async throws -> SnapshotPostCloneResult
 }
 
-final class NoopSnapshotService: SnapshotService {
+final class NoopSnapshotService: SnapshotService, @unchecked Sendable {
     func postCloneSuccess(
         for pair: BackupPair,
         targetURL: URL,

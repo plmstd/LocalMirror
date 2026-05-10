@@ -241,8 +241,31 @@ struct ContentView: View {
                     .foregroundStyle(.secondary)
 
             case .preflighting:
-                Label("Preparing preflight review…", systemImage: "magnifyingglass.circle")
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack(spacing: 10) {
+                        ProgressView()
+                            .controlSize(.small)
+                        Text(appModel.preflightProgress?.phase ?? "Preparing preflight review…")
+                    }
                     .foregroundStyle(.secondary)
+
+                    if let progress = appModel.preflightProgress {
+                        Text("\(progress.plannedChangeCount) planned change(s) found so far.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        if let currentPath = progress.currentPath, !currentPath.isEmpty {
+                            Text(currentPath)
+                                .font(.caption.monospaced())
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                        }
+                        if progress.warningCount > 0 {
+                            Text("\(progress.warningCount) warning(s) seen during preflight.")
+                                .font(.caption)
+                                .foregroundStyle(.orange)
+                        }
+                    }
+                }
 
             case .review(let report):
                 VStack(alignment: .leading, spacing: 8) {
@@ -258,11 +281,26 @@ struct ContentView: View {
                     Text("\(progress.appliedChangeCount) of \(max(progress.totalPlannedChanges, 1)) planned change(s) applied.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                    if progress.estimatedTransferBytes > 0, progress.totalTransferredBytes > 0 {
+                        Text(overallTransferProgressText(progress))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                     if let currentPath = progress.currentPath, !currentPath.isEmpty {
                         Text(currentPath)
                             .font(.caption.monospaced())
                             .lineLimit(1)
                             .truncationMode(.middle)
+                    }
+                    if let percent = progress.currentFilePercent {
+                        ProgressView(value: percent)
+                        Text(currentFileProgressText(
+                            percent: percent,
+                            bytesTransferred: progress.currentFileBytesTransferred,
+                            estimatedBytes: progress.currentFileEstimatedBytes
+                        ))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                     }
                     if progress.warningCount > 0 {
                         Text("\(progress.warningCount) warning(s) seen so far.")
@@ -304,6 +342,27 @@ struct ContentView: View {
         .padding(16)
         .background(.regularMaterial)
         .clipShape(RoundedRectangle(cornerRadius: 14))
+    }
+
+    private func overallTransferProgressText(_ progress: RunProgress) -> String {
+        let formatter = ByteCountFormatter()
+        formatter.allowedUnits = [.useKB, .useMB, .useGB, .useTB]
+        formatter.countStyle = .file
+        return "\(formatter.string(fromByteCount: progress.totalTransferredBytes)) of \(formatter.string(fromByteCount: progress.estimatedTransferBytes)) transferred."
+    }
+
+    private func currentFileProgressText(percent: Double, bytesTransferred: Int64?, estimatedBytes: Int64?) -> String {
+        let percentValue = Int((percent * 100).rounded())
+        if let bytesTransferred {
+            let formatter = ByteCountFormatter()
+            formatter.allowedUnits = [.useKB, .useMB, .useGB, .useTB]
+            formatter.countStyle = .file
+            if let estimatedBytes, estimatedBytes > 0 {
+                return "Current file: \(percentValue)% (\(formatter.string(fromByteCount: bytesTransferred)) of \(formatter.string(fromByteCount: estimatedBytes)))"
+            }
+            return "Current file: \(percentValue)% (\(formatter.string(fromByteCount: bytesTransferred)) transferred)"
+        }
+        return "Current file: \(percentValue)%"
     }
 
     private func terminalStateCard(title: String, tone: Color, subtitle: String) -> some View {

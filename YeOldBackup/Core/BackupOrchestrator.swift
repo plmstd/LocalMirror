@@ -2,9 +2,10 @@ import Combine
 import Foundation
 
 @MainActor
-final class BackupOrchestrator: ObservableObject {
+final class BackupOrchestrator: ObservableObject, @unchecked Sendable {
     @Published private(set) var state: BackupRunState = .idle
     @Published private(set) var installation: SyncInstallation?
+    @Published private(set) var preflightProgress: PreflightProgress?
 
     private let engine: SyncEngine
     private let snapshotService: SnapshotService
@@ -27,14 +28,22 @@ final class BackupOrchestrator: ObservableObject {
 
     func beginPreflight(for pair: BackupPair) {
         guard !engine.isRunning else { return }
+        preflightProgress = PreflightProgress(
+            phase: "Scanning source and target…",
+            plannedChangeCount: 0,
+            currentPath: nil,
+            warningCount: 0
+        )
         state = .preflighting
 
         Task {
             do {
                 let report = try await buildPreflightReport(for: pair)
+                preflightProgress = nil
                 state = .review(report)
             } catch {
                 let diagnostics = (error as? BackupError)?.diagnostics
+                preflightProgress = nil
                 state = .failed(
                     RunFailure(
                         pairID: pair.id,
@@ -57,18 +66,28 @@ final class BackupOrchestrator: ObservableObject {
 
     func startApprovedRun() {
         guard case .review(let report) = state else { return }
+        let engine = self.engine
+        let snapshotService = self.snapshotService
+        let exclusions = self.exclusions
+        let plannedChangeCount = max(report.plannedChanges.count, report.statistics.totalChangeCount)
 
         let initialProgress = RunProgress(
             phase: "Starting clone backup…",
-            totalPlannedChanges: max(report.plannedChanges.count, report.statistics.totalChangeCount),
+            totalPlannedChanges: plannedChangeCount,
             appliedChangeCount: 0,
             currentPath: nil,
             lastAppliedChange: nil,
-            warningCount: report.warningMessages.count
+            warningCount: report.warningMessages.count,
+            estimatedTransferBytes: report.statistics.estimatedTransferBytes,
+            completedTransferBytes: 0,
+            currentChangeProgress: 0,
+            currentFilePercent: nil,
+            currentFileBytesTransferred: nil,
+            currentFileEstimatedBytes: nil
         )
         state = .running(initialProgress)
 
-        Task {
+        Task.detached(priority: .userInitiated) { [self, report, engine, snapshotService, exclusions, plannedChangeCount] in
             let startedAt = Date()
             do {
                 let completion = try await engine.run(
@@ -76,8 +95,10 @@ final class BackupOrchestrator: ObservableObject {
                     plannedChanges: report.plannedChanges,
                     exclusions: exclusions
                 ) { [weak self] event in
-                    Task { @MainActor in
-                        self?.apply(event: event, plannedChangeCount: max(report.plannedChanges.count, report.statistics.totalChangeCount))
+                    guard let self else { return }
+                    let orchestrator = self
+                    await MainActor.run {
+                        orchestrator.apply(event: event, plannedChangeCount: plannedChangeCount)
                     }
                 }
 
@@ -86,17 +107,19 @@ final class BackupOrchestrator: ObservableObject {
                 var postCloneWarnings: [String] = []
 
                 if completion.log.wasCancelled {
-                    state = .cancelled(
-                        RunFailure(
-                            pairID: report.pair.id,
-                            startedAt: startedAt,
-                            finishedAt: finishedAt,
-                            reason: "Clone backup cancelled. The target may now be partially synced; the next run must start with a fresh preflight.",
-                            warnings: completion.log.warnings,
-                            logFileURL: logURL,
-                            log: completion.log
+                    await MainActor.run {
+                        state = .cancelled(
+                            RunFailure(
+                                pairID: report.pair.id,
+                                startedAt: startedAt,
+                                finishedAt: finishedAt,
+                                reason: "Clone backup cancelled. The target may now be partially synced; the next run must start with a fresh preflight.",
+                                warnings: completion.log.warnings,
+                                logFileURL: logURL,
+                                log: completion.log
+                            )
                         )
-                    )
+                    }
                     return
                 }
 
@@ -128,46 +151,52 @@ final class BackupOrchestrator: ObservableObject {
                 )
 
                 if completion.log.exitCode == 0 {
-                    state = .completed(
-                        RunResult(
-                            pairID: report.pair.id,
-                            startedAt: startedAt,
-                            finishedAt: finishedAt,
-                            appliedChangeCount: logWithPostCloneWarnings.appliedChanges.count,
-                            deletionCount: logWithPostCloneWarnings.appliedChanges.filter { $0.operation == .delete }.count,
-                            warnings: combinedWarnings,
-                            logFileURL: logURL,
-                            log: logWithPostCloneWarnings,
-                            summary: combinedWarnings.isEmpty
-                                ? "Clone backup completed successfully."
-                                : "Clone backup completed with \(combinedWarnings.count) warning(s)."
+                    await MainActor.run {
+                        state = .completed(
+                            RunResult(
+                                pairID: report.pair.id,
+                                startedAt: startedAt,
+                                finishedAt: finishedAt,
+                                appliedChangeCount: logWithPostCloneWarnings.appliedChanges.count,
+                                deletionCount: logWithPostCloneWarnings.appliedChanges.filter { $0.operation == .delete }.count,
+                                warnings: combinedWarnings,
+                                logFileURL: logURL,
+                                log: logWithPostCloneWarnings,
+                                summary: combinedWarnings.isEmpty
+                                    ? "Clone backup completed successfully."
+                                    : "Clone backup completed with \(combinedWarnings.count) warning(s)."
+                            )
                         )
-                    )
+                    }
                 } else {
+                    await MainActor.run {
+                        state = .failed(
+                            RunFailure(
+                                pairID: report.pair.id,
+                                startedAt: startedAt,
+                                finishedAt: finishedAt,
+                                reason: "rsync exited with code \(completion.log.exitCode).",
+                                warnings: combinedWarnings,
+                                logFileURL: logURL,
+                                log: logWithPostCloneWarnings
+                            )
+                        )
+                    }
+                }
+            } catch {
+                await MainActor.run {
                     state = .failed(
                         RunFailure(
                             pairID: report.pair.id,
                             startedAt: startedAt,
-                            finishedAt: finishedAt,
-                            reason: "rsync exited with code \(completion.log.exitCode).",
-                            warnings: combinedWarnings,
-                            logFileURL: logURL,
-                            log: logWithPostCloneWarnings
+                            finishedAt: Date(),
+                            reason: error.localizedDescription,
+                            warnings: [],
+                            logFileURL: nil,
+                            log: nil
                         )
                     )
                 }
-            } catch {
-                state = .failed(
-                    RunFailure(
-                        pairID: report.pair.id,
-                        startedAt: startedAt,
-                        finishedAt: Date(),
-                        reason: error.localizedDescription,
-                        warnings: [],
-                        logFileURL: nil,
-                        log: nil
-                    )
-                )
             }
         }
     }
@@ -240,7 +269,13 @@ final class BackupOrchestrator: ObservableObject {
                 lastRun: pair.lastRun
             ),
             exclusions: exclusions
-        )
+        ) { [weak self] event in
+            guard let self else { return }
+            let orchestrator = self
+            await MainActor.run {
+                orchestrator.apply(preflightEvent: event)
+            }
+        }
 
         let availableFreeBytes = VolumeIdentityResolver.availableCapacity(for: targetURL)
         if let availableFreeBytes, preflight.statistics.estimatedTransferBytes > 0, availableFreeBytes < preflight.statistics.estimatedTransferBytes {
@@ -306,6 +341,7 @@ final class BackupOrchestrator: ObservableObject {
     private func apply(event: SyncRunEvent, plannedChangeCount: Int) {
         switch event {
         case .started:
+            let current = currentProgress(plannedChangeCount: plannedChangeCount)
             state = .running(
                 RunProgress(
                     phase: "Preparing clone run…",
@@ -313,7 +349,31 @@ final class BackupOrchestrator: ObservableObject {
                     appliedChangeCount: 0,
                     currentPath: nil,
                     lastAppliedChange: nil,
-                    warningCount: 0
+                    warningCount: 0,
+                    estimatedTransferBytes: current.estimatedTransferBytes,
+                    completedTransferBytes: current.completedTransferBytes,
+                    currentChangeProgress: 0,
+                    currentFilePercent: nil,
+                    currentFileBytesTransferred: nil,
+                    currentFileEstimatedBytes: nil
+                )
+            )
+        case .changeDetected(let change):
+            let current = currentProgress(plannedChangeCount: plannedChangeCount)
+            state = .running(
+                RunProgress(
+                    phase: "Cloning files…",
+                    totalPlannedChanges: current.totalPlannedChanges,
+                    appliedChangeCount: current.appliedChangeCount,
+                    currentPath: change.path,
+                    lastAppliedChange: current.lastAppliedChange,
+                    warningCount: current.warningCount,
+                    estimatedTransferBytes: current.estimatedTransferBytes,
+                    completedTransferBytes: current.completedTransferBytes,
+                    currentChangeProgress: 0,
+                    currentFilePercent: nil,
+                    currentFileBytesTransferred: nil,
+                    currentFileEstimatedBytes: nil
                 )
             )
         case .appliedChange(let change):
@@ -325,7 +385,34 @@ final class BackupOrchestrator: ObservableObject {
                     appliedChangeCount: current.appliedChangeCount + 1,
                     currentPath: change.path,
                     lastAppliedChange: change,
-                    warningCount: current.warningCount
+                    warningCount: current.warningCount,
+                    estimatedTransferBytes: current.estimatedTransferBytes,
+                    completedTransferBytes: current.completedTransferBytes,
+                    currentChangeProgress: 0,
+                    currentFilePercent: nil,
+                    currentFileBytesTransferred: nil,
+                    currentFileEstimatedBytes: nil
+                )
+            )
+        case .transferProgress(let progress):
+            let current = currentProgress(plannedChangeCount: plannedChangeCount)
+            let completedTransferBytes = progress.isCompleted
+                ? current.completedTransferBytes + progress.bytesTransferred
+                : current.completedTransferBytes
+            state = .running(
+                RunProgress(
+                    phase: "Cloning files…",
+                    totalPlannedChanges: current.totalPlannedChanges,
+                    appliedChangeCount: current.appliedChangeCount,
+                    currentPath: progress.path,
+                    lastAppliedChange: current.lastAppliedChange,
+                    warningCount: current.warningCount,
+                    estimatedTransferBytes: current.estimatedTransferBytes,
+                    completedTransferBytes: completedTransferBytes,
+                    currentChangeProgress: progress.isCompleted ? 0 : progress.percentComplete,
+                    currentFilePercent: progress.isCompleted ? nil : progress.percentComplete,
+                    currentFileBytesTransferred: progress.isCompleted ? nil : progress.bytesTransferred,
+                    currentFileEstimatedBytes: progress.isCompleted ? nil : progress.estimatedFileBytes
                 )
             )
         case .warning:
@@ -337,7 +424,13 @@ final class BackupOrchestrator: ObservableObject {
                     appliedChangeCount: current.appliedChangeCount,
                     currentPath: current.currentPath,
                     lastAppliedChange: current.lastAppliedChange,
-                    warningCount: current.warningCount + 1
+                    warningCount: current.warningCount + 1,
+                    estimatedTransferBytes: current.estimatedTransferBytes,
+                    completedTransferBytes: current.completedTransferBytes,
+                    currentChangeProgress: current.currentChangeProgress,
+                    currentFilePercent: current.currentFilePercent,
+                    currentFileBytesTransferred: current.currentFileBytesTransferred,
+                    currentFileEstimatedBytes: current.currentFileEstimatedBytes
                 )
             )
         case .info(let message):
@@ -349,8 +442,55 @@ final class BackupOrchestrator: ObservableObject {
                     appliedChangeCount: current.appliedChangeCount,
                     currentPath: current.currentPath,
                     lastAppliedChange: current.lastAppliedChange,
-                    warningCount: current.warningCount
+                    warningCount: current.warningCount,
+                    estimatedTransferBytes: current.estimatedTransferBytes,
+                    completedTransferBytes: current.completedTransferBytes,
+                    currentChangeProgress: current.currentChangeProgress,
+                    currentFilePercent: current.currentFilePercent,
+                    currentFileBytesTransferred: current.currentFileBytesTransferred,
+                    currentFileEstimatedBytes: current.currentFileEstimatedBytes
                 )
+            )
+        }
+    }
+
+    private func apply(preflightEvent event: SyncPreflightEvent) {
+        let current = preflightProgress ?? PreflightProgress(
+            phase: "Scanning source and target…",
+            plannedChangeCount: 0,
+            currentPath: nil,
+            warningCount: 0
+        )
+
+        switch event {
+        case .started:
+            preflightProgress = PreflightProgress(
+                phase: "Scanning source and target…",
+                plannedChangeCount: current.plannedChangeCount,
+                currentPath: current.currentPath,
+                warningCount: current.warningCount
+            )
+        case .plannedChange(let change):
+            preflightProgress = PreflightProgress(
+                phase: "Building preflight review…",
+                plannedChangeCount: current.plannedChangeCount + 1,
+                currentPath: change.path,
+                warningCount: current.warningCount
+            )
+        case .warning:
+            preflightProgress = PreflightProgress(
+                phase: current.phase,
+                plannedChangeCount: current.plannedChangeCount,
+                currentPath: current.currentPath,
+                warningCount: current.warningCount + 1
+            )
+        case .info(let message):
+            let trimmed = message.trimmingCharacters(in: .whitespacesAndNewlines)
+            preflightProgress = PreflightProgress(
+                phase: trimmed.isEmpty ? current.phase : trimmed,
+                plannedChangeCount: current.plannedChangeCount,
+                currentPath: current.currentPath,
+                warningCount: current.warningCount
             )
         }
     }
@@ -365,7 +505,13 @@ final class BackupOrchestrator: ObservableObject {
             appliedChangeCount: 0,
             currentPath: nil,
             lastAppliedChange: nil,
-            warningCount: 0
+            warningCount: 0,
+            estimatedTransferBytes: 0,
+            completedTransferBytes: 0,
+            currentChangeProgress: 0,
+            currentFilePercent: nil,
+            currentFileBytesTransferred: nil,
+            currentFileEstimatedBytes: nil
         )
     }
 

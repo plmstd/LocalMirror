@@ -70,6 +70,43 @@ final class BackupOrchestratorTests: XCTestCase {
         XCTAssertTrue(failure.reason.contains("partially synced"))
     }
 
+    func testPreflightPublishesProgressBeforeReviewCompletes() async throws {
+        let engine = FakeSyncEngine()
+        let change = ChangeRecord(operation: .update, itemizedCode: ">f.st....", path: "large.bin")
+        engine.preflightResult = SyncPreflightResult(
+            plannedChanges: [change],
+            statistics: SyncStatistics(totalSourceItems: 1, transferCount: 1, deletionCount: 0, estimatedTransferBytes: 1_024),
+            stdoutLines: [],
+            stderrLines: []
+        )
+        engine.preflightFactory = { eventHandler in
+            await eventHandler?(.started(Date()))
+            await eventHandler?(.plannedChange(change))
+            try await Task.sleep(for: .milliseconds(80))
+            return engine.preflightResult
+        }
+
+        let orchestrator = BackupOrchestrator(engine: engine)
+        orchestrator.beginPreflight(for: try makePair())
+
+        let progress = try await waitForPreflightProgress(orchestrator)
+        XCTAssertEqual(progress.plannedChangeCount, 1)
+        XCTAssertEqual(progress.currentPath, "large.bin")
+
+        _ = try await waitForReview(orchestrator)
+    }
+
+    private func waitForPreflightProgress(_ orchestrator: BackupOrchestrator) async throws -> PreflightProgress {
+        for _ in 0..<100 {
+            if let progress = orchestrator.preflightProgress, progress.plannedChangeCount > 0 {
+                return progress
+            }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTFail("Timed out waiting for preflight progress")
+        throw CancellationError()
+    }
+
     private func waitForReview(_ orchestrator: BackupOrchestrator) async throws -> PreflightReport {
         for _ in 0..<100 {
             if case .review(let report) = orchestrator.state {
@@ -116,8 +153,9 @@ final class BackupOrchestratorTests: XCTestCase {
     }
 }
 
-private final class FakeSyncEngine: SyncEngine {
+private final class FakeSyncEngine: SyncEngine, @unchecked Sendable {
     var preflightResult = SyncPreflightResult(plannedChanges: [], statistics: .init(totalSourceItems: 0, transferCount: 0, deletionCount: 0, estimatedTransferBytes: 0), stdoutLines: [], stderrLines: [])
+    var preflightFactory: (((@Sendable (SyncPreflightEvent) async -> Void)?) async throws -> SyncPreflightResult)?
     var runFactory: (() async throws -> SyncRunCompletion)?
     var cancelWasRequested = false
     var isRunning = false
@@ -126,13 +164,20 @@ private final class FakeSyncEngine: SyncEngine {
         SyncInstallation(binaryURL: URL(fileURLWithPath: "/tmp/rsync"), versionDescription: "test", kind: .custom)
     }
 
-    func preflight(pair: BackupPair, exclusions: [String]) async throws -> SyncPreflightResult {
-        preflightResult
+    func preflight(
+        pair: BackupPair,
+        exclusions: [String],
+        eventHandler: (@Sendable (SyncPreflightEvent) async -> Void)?
+    ) async throws -> SyncPreflightResult {
+        if let preflightFactory {
+            return try await preflightFactory(eventHandler)
+        }
+        return preflightResult
     }
 
-    func run(pair: BackupPair, plannedChanges: [ChangeRecord], exclusions: [String], eventHandler: @escaping @Sendable (SyncRunEvent) -> Void) async throws -> SyncRunCompletion {
+    func run(pair: BackupPair, plannedChanges: [ChangeRecord], exclusions: [String], eventHandler: @escaping @Sendable (SyncRunEvent) async -> Void) async throws -> SyncRunCompletion {
         isRunning = true
-        eventHandler(.started(Date()))
+        await eventHandler(.started(Date()))
         defer { isRunning = false }
         if let runFactory {
             return try await runFactory()

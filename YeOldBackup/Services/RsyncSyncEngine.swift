@@ -12,7 +12,7 @@ private actor LineAccumulator {
     }
 }
 
-final class RsyncSyncEngine: SyncEngine {
+final class RsyncSyncEngine: SyncEngine, @unchecked Sendable {
     private struct ExecutionResult {
         var binaryPath: String
         var arguments: [String]
@@ -44,13 +44,35 @@ final class RsyncSyncEngine: SyncEngine {
         try locator.locate()
     }
 
-    func preflight(pair: BackupPair, exclusions: [String]) async throws -> SyncPreflightResult {
+    func preflight(
+        pair: BackupPair,
+        exclusions: [String],
+        eventHandler: (@Sendable (SyncPreflightEvent) async -> Void)?
+    ) async throws -> SyncPreflightResult {
         let installation = try validateInstallation()
         let arguments = makeArguments(dryRun: true, pair: pair, exclusions: exclusions)
         let result = try await execute(
             installation: installation,
             arguments: arguments,
-            liveEventHandler: nil
+            liveEventHandler: { event in
+                guard let eventHandler else { return }
+                switch event {
+                case .started(let date):
+                    await eventHandler(.started(date))
+                case .changeDetected(let change):
+                    await eventHandler(.plannedChange(change))
+                case .appliedChange(let change):
+                    if change.operation != .create && change.operation != .update {
+                        await eventHandler(.plannedChange(change))
+                    }
+                case .warning(let message):
+                    await eventHandler(.warning(message))
+                case .info(let message):
+                    await eventHandler(.info(message))
+                case .transferProgress:
+                    break
+                }
+            }
         )
         guard result.terminationReason == .exit, result.terminationStatus == 0 else {
             let diagnostics = CommandDiagnostics(
@@ -73,7 +95,7 @@ final class RsyncSyncEngine: SyncEngine {
         pair: BackupPair,
         plannedChanges: [ChangeRecord],
         exclusions: [String],
-        eventHandler: @escaping @Sendable (SyncRunEvent) -> Void
+        eventHandler: @escaping @Sendable (SyncRunEvent) async -> Void
     ) async throws -> SyncRunCompletion {
         let installation = try validateInstallation()
         let arguments = makeArguments(dryRun: false, pair: pair, exclusions: exclusions)
@@ -118,6 +140,8 @@ final class RsyncSyncEngine: SyncEngine {
         var arguments = ["-a", "--delete-delay", "--itemize-changes", "--out-format=ITEM|%i|%n%L", "--stats"]
         if dryRun {
             arguments.insert("-n", at: 0)
+        } else {
+            arguments.append("--progress")
         }
         for exclusion in exclusions {
             arguments.append(contentsOf: ["--exclude", exclusion])
@@ -134,7 +158,7 @@ final class RsyncSyncEngine: SyncEngine {
     private func execute(
         installation: SyncInstallation,
         arguments: [String],
-        liveEventHandler: (@Sendable (SyncRunEvent) -> Void)?
+        liveEventHandler: (@Sendable (SyncRunEvent) async -> Void)?
     ) async throws -> ExecutionResult {
         let process = Process()
         process.executableURL = installation.binaryURL
@@ -156,31 +180,54 @@ final class RsyncSyncEngine: SyncEngine {
 
         let startedAt = Date()
 
-        let stdoutTask = Task {
-            for try await line in stdoutPipe.fileHandleForReading.bytes.lines {
+        let stdoutTask = Task<ChangeRecord?, Error> {
+            var inFlightTransferChange: ChangeRecord?
+
+            try await readDelimitedOutput(from: stdoutPipe.fileHandleForReading) { line in
                 await stdoutLines.append(line)
-                guard let liveEventHandler else { continue }
+                guard let liveEventHandler else { return }
                 if let change = RsyncOutputParser.parseChanges(from: [line]).first {
-                    liveEventHandler(.appliedChange(change))
+                    if let pending = inFlightTransferChange {
+                        await liveEventHandler(.appliedChange(pending))
+                        inFlightTransferChange = nil
+                    }
+
+                    if change.operation == .create || change.operation == .update {
+                        inFlightTransferChange = change
+                        await liveEventHandler(.changeDetected(change))
+                    } else {
+                        await liveEventHandler(.appliedChange(change))
+                    }
+                } else if let pending = inFlightTransferChange,
+                          let progress = RsyncOutputParser.parseTransferProgress(from: line, currentPath: pending.path) {
+                    await liveEventHandler(.transferProgress(progress))
+                    if progress.isCompleted {
+                        await liveEventHandler(.appliedChange(pending))
+                        inFlightTransferChange = nil
+                    }
                 } else if !line.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    liveEventHandler(.info(line))
+                    await liveEventHandler(.info(line))
                 }
             }
+
+            return inFlightTransferChange
         }
 
         let stderrTask = Task {
-            for try await line in stderrPipe.fileHandleForReading.bytes.lines {
+            try await readDelimitedOutput(from: stderrPipe.fileHandleForReading) { line in
                 await stderrLines.append(line)
-                guard let liveEventHandler else { continue }
+                guard let liveEventHandler else { return }
                 if !line.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    liveEventHandler(.warning(line))
+                    await liveEventHandler(.warning(line))
                 }
             }
         }
 
         let exitCodeTask = Task<(Int32, CommandTerminationReason), Error> {
             try process.run()
-            liveEventHandler?(.started(Date()))
+            if let liveEventHandler {
+                await liveEventHandler(.started(Date()))
+            }
             return await withCheckedContinuation { continuation in
                 process.terminationHandler = { finishedProcess in
                     let reason: CommandTerminationReason = finishedProcess.terminationReason == .uncaughtSignal ? .signal : .exit
@@ -191,8 +238,15 @@ final class RsyncSyncEngine: SyncEngine {
 
         do {
             let (terminationStatus, terminationReason) = try await exitCodeTask.value
-            _ = try? await stdoutTask.value
+            let pendingTransferChange = try? await stdoutTask.value
             _ = try? await stderrTask.value
+            if terminationReason == .exit,
+               terminationStatus == 0,
+               let pendingTransferChange {
+                if let liveEventHandler {
+                    await liveEventHandler(.appliedChange(pendingTransferChange))
+                }
+            }
             stateQueue.sync {
                 self.currentProcess = nil
             }
@@ -211,6 +265,40 @@ final class RsyncSyncEngine: SyncEngine {
                 self.currentProcess = nil
             }
             throw BackupError.rsyncLaunchFailed(error.localizedDescription)
+        }
+    }
+
+    private func readDelimitedOutput(
+        from handle: FileHandle,
+        handler: @escaping (String) async -> Void
+    ) async throws {
+        var buffer = Data()
+        var previousWasCarriageReturn = false
+
+        for try await byte in handle.bytes {
+            switch byte {
+            case 0x0D, 0x0A:
+                if previousWasCarriageReturn && byte == 0x0A {
+                    previousWasCarriageReturn = false
+                    continue
+                }
+
+                if !buffer.isEmpty {
+                    let line = String(decoding: buffer, as: UTF8.self)
+                    buffer.removeAll(keepingCapacity: true)
+                    await handler(line)
+                }
+
+                previousWasCarriageReturn = (byte == 0x0D)
+
+            default:
+                previousWasCarriageReturn = false
+                buffer.append(byte)
+            }
+        }
+
+        if !buffer.isEmpty {
+            await handler(String(decoding: buffer, as: UTF8.self))
         }
     }
 

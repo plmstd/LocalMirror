@@ -16,6 +16,7 @@ final class AppModel: ObservableObject {
     @Published var selectedPairID: UUID?
     @Published var runState: BackupRunState = .idle
     @Published var installation: SyncInstallation?
+    @Published var preflightProgress: PreflightProgress?
     @Published var statusNote: String?
 
     private let store: BackupStore
@@ -231,7 +232,6 @@ final class AppModel: ObservableObject {
 
     private func bindOrchestrator() {
         orchestrator.$state
-            .receive(on: RunLoop.main)
             .sink { [weak self] state in
                 self?.runState = state
                 self?.handle(runState: state)
@@ -239,9 +239,14 @@ final class AppModel: ObservableObject {
             .store(in: &cancellables)
 
         orchestrator.$installation
-            .receive(on: RunLoop.main)
             .sink { [weak self] installation in
                 self?.installation = installation
+            }
+            .store(in: &cancellables)
+
+        orchestrator.$preflightProgress
+            .sink { [weak self] progress in
+                self?.preflightProgress = progress
             }
             .store(in: &cancellables)
     }

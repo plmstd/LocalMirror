@@ -228,11 +228,45 @@ struct RunProgress: Hashable {
     var currentPath: String?
     var lastAppliedChange: ChangeRecord?
     var warningCount: Int
+    var estimatedTransferBytes: Int64
+    var completedTransferBytes: Int64
+    var currentChangeProgress: Double
+    var currentFilePercent: Double?
+    var currentFileBytesTransferred: Int64?
+    var currentFileEstimatedBytes: Int64?
+
+    var totalTransferredBytes: Int64 {
+        let currentBytes = currentFilePercent.map { $0 < 1 ? (currentFileBytesTransferred ?? 0) : 0 } ?? 0
+        return completedTransferBytes + currentBytes
+    }
 
     var fractionCompleted: Double {
         guard totalPlannedChanges > 0 else { return 0 }
-        return min(1, max(0, Double(appliedChangeCount) / Double(totalPlannedChanges)))
+        let completedUnits = Double(appliedChangeCount) + min(max(currentChangeProgress, 0), 0.99)
+        let changeFraction = completedUnits / Double(totalPlannedChanges)
+        let byteFraction: Double
+        if estimatedTransferBytes > 0, totalTransferredBytes > 0 {
+            byteFraction = Double(totalTransferredBytes) / Double(estimatedTransferBytes)
+        } else {
+            byteFraction = 0
+        }
+        return min(1, max(0, max(changeFraction, byteFraction)))
     }
+}
+
+struct TransferProgress: Hashable {
+    var path: String
+    var bytesTransferred: Int64
+    var estimatedFileBytes: Int64?
+    var percentComplete: Double
+    var isCompleted: Bool
+}
+
+struct PreflightProgress: Hashable {
+    var phase: String
+    var plannedChangeCount: Int
+    var currentPath: String?
+    var warningCount: Int
 }
 
 enum ValidationSeverity: String, Codable, Hashable {
@@ -367,7 +401,16 @@ struct CommandDiagnostics: Hashable {
 
 enum SyncRunEvent: Hashable {
     case started(Date)
+    case changeDetected(ChangeRecord)
     case appliedChange(ChangeRecord)
+    case transferProgress(TransferProgress)
+    case warning(String)
+    case info(String)
+}
+
+enum SyncPreflightEvent: Hashable {
+    case started(Date)
+    case plannedChange(ChangeRecord)
     case warning(String)
     case info(String)
 }
@@ -413,15 +456,25 @@ enum BackupExclusions {
     ]
 }
 
-protocol SyncEngine: AnyObject {
+protocol SyncEngine: AnyObject, Sendable {
     var isRunning: Bool { get }
     func validateInstallation() throws -> SyncInstallation
-    func preflight(pair: BackupPair, exclusions: [String]) async throws -> SyncPreflightResult
+    func preflight(
+        pair: BackupPair,
+        exclusions: [String],
+        eventHandler: (@Sendable (SyncPreflightEvent) async -> Void)?
+    ) async throws -> SyncPreflightResult
     func run(
         pair: BackupPair,
         plannedChanges: [ChangeRecord],
         exclusions: [String],
-        eventHandler: @escaping @Sendable (SyncRunEvent) -> Void
+        eventHandler: @escaping @Sendable (SyncRunEvent) async -> Void
     ) async throws -> SyncRunCompletion
     func requestCancellation() async
+}
+
+extension SyncEngine {
+    func preflight(pair: BackupPair, exclusions: [String]) async throws -> SyncPreflightResult {
+        try await preflight(pair: pair, exclusions: exclusions, eventHandler: nil)
+    }
 }

@@ -142,4 +142,39 @@ enum RsyncOutputParser {
         }
         return Int64(number * multiplier)
     }
+
+    static func parseTransferProgress(from line: String, currentPath: String?) -> TransferProgress? {
+        guard let currentPath else { return nil }
+
+        let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+
+        let components = trimmed.split(whereSeparator: \.isWhitespace)
+        guard components.count >= 2 else { return nil }
+
+        let byteToken = String(components[0]).replacingOccurrences(of: ",", with: "")
+        let percentToken = String(components[1])
+
+        guard let bytesTransferred = Int64(byteToken), percentToken.hasSuffix("%") else {
+            return nil
+        }
+
+        let percentValue = String(percentToken.dropLast())
+        guard let percentComplete = Double(percentValue) else {
+            return nil
+        }
+
+        let normalizedPercent = percentComplete / 100
+        let estimatedFileBytes = normalizedPercent > 0
+            ? Int64((Double(bytesTransferred) / normalizedPercent).rounded())
+            : nil
+
+        return TransferProgress(
+            path: currentPath,
+            bytesTransferred: bytesTransferred,
+            estimatedFileBytes: estimatedFileBytes,
+            percentComplete: normalizedPercent,
+            isCompleted: trimmed.contains("(xfer#") || percentComplete >= 100
+        )
+    }
 }
