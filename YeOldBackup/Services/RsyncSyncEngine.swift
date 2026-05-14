@@ -198,29 +198,41 @@ final class RsyncSyncEngine: SyncEngine, @unchecked Sendable {
             }
 
             try await readDelimitedOutput(from: stdoutChannel.readDescriptor) { line in
-                await stdoutLines.append(line)
-                guard let liveEventHandler else { return }
                 if let change = RsyncOutputParser.parseChanges(from: [line]).first {
+                    await stdoutLines.append(line)
                     if let pending = inFlightTransferChange {
-                        await liveEventHandler(.appliedChange(pending))
+                        if let liveEventHandler {
+                            await liveEventHandler(.appliedChange(pending))
+                        }
                         inFlightTransferChange = nil
                     }
 
                     if change.operation == .create || change.operation == .update {
                         inFlightTransferChange = change
-                        await liveEventHandler(.changeDetected(change))
+                        if let liveEventHandler {
+                            await liveEventHandler(.changeDetected(change))
+                        }
                     } else {
-                        await liveEventHandler(.appliedChange(change))
+                        if let liveEventHandler {
+                            await liveEventHandler(.appliedChange(change))
+                        }
                     }
                 } else if let pending = inFlightTransferChange,
                           let progress = RsyncOutputParser.parseTransferProgress(from: line, currentPath: pending.path) {
-                    await liveEventHandler(.transferProgress(progress))
+                    if let liveEventHandler {
+                        await liveEventHandler(.transferProgress(progress))
+                    }
                     if progress.isCompleted {
-                        await liveEventHandler(.appliedChange(pending))
+                        if let liveEventHandler {
+                            await liveEventHandler(.appliedChange(pending))
+                        }
                         inFlightTransferChange = nil
                     }
                 } else if !line.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    await liveEventHandler(.info(line))
+                    await stdoutLines.append(line)
+                    if let liveEventHandler {
+                        await liveEventHandler(.info(line))
+                    }
                 }
             }
 

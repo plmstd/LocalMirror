@@ -225,6 +225,9 @@ struct ContentView: View {
             case .success:
                 Label("Success", systemImage: "checkmark.circle.fill")
                     .foregroundStyle(.green)
+            case .partial:
+                Label("Partial", systemImage: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.orange)
             case .failure:
                 Label("Failed", systemImage: "xmark.circle.fill")
                     .foregroundStyle(.red)
@@ -298,7 +301,7 @@ struct ContentView: View {
             case .completed(let result):
                 terminalStateCard(
                     title: result.summary,
-                    tone: .green,
+                    tone: result.outcome == .partial ? .orange : .green,
                     subtitle: "\(result.appliedChangeCount) change(s) applied, \(result.deletionCount) deletion(s), \(result.warnings.count) warning(s)."
                 )
 

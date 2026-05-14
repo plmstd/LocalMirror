@@ -38,8 +38,20 @@ struct VolumeIdentity: Codable, Hashable {
 
 enum BackupOutcomeStatus: String, Codable, Hashable {
     case success
+    case partial
     case failure
     case cancelled
+
+    static func rsyncOutcome(for exitCode: Int32) -> BackupOutcomeStatus {
+        switch exitCode {
+        case 0:
+            return .success
+        case 23, 24:
+            return .partial
+        default:
+            return .failure
+        }
+    }
 }
 
 struct BackupPairLastRun: Codable, Hashable {
@@ -200,6 +212,7 @@ struct SyncRunCompletion: Hashable {
 }
 
 struct RunResult: Hashable {
+    var outcome: BackupOutcomeStatus
     var pairID: UUID
     var startedAt: Date
     var finishedAt: Date

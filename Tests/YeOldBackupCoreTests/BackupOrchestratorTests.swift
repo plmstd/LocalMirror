@@ -96,6 +96,45 @@ final class BackupOrchestratorTests: XCTestCase {
         _ = try await waitForReview(orchestrator)
     }
 
+    func testPartialRsyncExitCompletesWithPartialOutcome() async throws {
+        let engine = FakeSyncEngine()
+        let pair = try makePair()
+        let change = ChangeRecord(operation: .update, itemizedCode: ">f.st....", path: "file.txt")
+        engine.preflightResult = SyncPreflightResult(
+            plannedChanges: [change],
+            statistics: SyncStatistics(totalSourceItems: 1, transferCount: 1, deletionCount: 0, estimatedTransferBytes: 1_024),
+            stdoutLines: [],
+            stderrLines: []
+        )
+        engine.runFactory = {
+            SyncRunCompletion(
+                log: RunLog(
+                    id: UUID(),
+                    pairID: pair.id,
+                    startedAt: Date(),
+                    finishedAt: Date(),
+                    exitCode: 23,
+                    wasCancelled: false,
+                    stdoutLines: [],
+                    stderrLines: ["rsync error: some files could not be transferred"],
+                    warnings: ["rsync error: some files could not be transferred"],
+                    appliedChanges: [change],
+                    plannedChanges: [change],
+                    textLogRelativePath: "partial.log"
+                )
+            )
+        }
+
+        let orchestrator = BackupOrchestrator(engine: engine)
+        orchestrator.beginPreflight(for: pair)
+        _ = try await waitForReview(orchestrator)
+        orchestrator.startApprovedRun()
+
+        let result = try await waitForCompleted(orchestrator)
+        XCTAssertEqual(result.outcome, .partial)
+        XCTAssertTrue(result.summary.contains("completed with issues"))
+    }
+
     private func waitForPreflightProgress(_ orchestrator: BackupOrchestrator) async throws -> PreflightProgress {
         for _ in 0..<100 {
             if let progress = orchestrator.preflightProgress, progress.plannedChangeCount > 0 {
@@ -126,6 +165,17 @@ final class BackupOrchestratorTests: XCTestCase {
             try await Task.sleep(for: .milliseconds(10))
         }
         XCTFail("Timed out waiting for cancelled state")
+        throw CancellationError()
+    }
+
+    private func waitForCompleted(_ orchestrator: BackupOrchestrator) async throws -> RunResult {
+        for _ in 0..<200 {
+            if case .completed(let result) = orchestrator.state {
+                return result
+            }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTFail("Timed out waiting for completed state")
         throw CancellationError()
     }
 

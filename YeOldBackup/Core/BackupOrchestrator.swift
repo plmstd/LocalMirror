@@ -138,6 +138,7 @@ final class BackupOrchestrator: ObservableObject, @unchecked Sendable {
                 }
 
                 let combinedWarnings = completion.log.warnings + postCloneWarnings
+                let outcome = BackupOutcomeStatus.rsyncOutcome(for: completion.log.exitCode)
                 let logWithPostCloneWarnings = RunLog(
                     id: completion.log.id,
                     pairID: completion.log.pairID,
@@ -153,10 +154,11 @@ final class BackupOrchestrator: ObservableObject, @unchecked Sendable {
                     textLogRelativePath: completion.log.textLogRelativePath
                 )
 
-                if completion.log.exitCode == 0 {
+                if outcome == .success || outcome == .partial {
                     await MainActor.run {
                         state = .completed(
                             RunResult(
+                                outcome: outcome,
                                 pairID: report.pair.id,
                                 startedAt: startedAt,
                                 finishedAt: finishedAt,
@@ -165,7 +167,9 @@ final class BackupOrchestrator: ObservableObject, @unchecked Sendable {
                                 warnings: combinedWarnings,
                                 logFileURL: logURL,
                                 log: logWithPostCloneWarnings,
-                                summary: combinedWarnings.isEmpty
+                                summary: outcome == .partial
+                                    ? "Clone backup completed with issues (rsync exit code \(completion.log.exitCode))."
+                                    : combinedWarnings.isEmpty
                                     ? "Clone backup completed successfully."
                                     : "Clone backup completed with \(combinedWarnings.count) warning(s)."
                             )

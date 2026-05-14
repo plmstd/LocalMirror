@@ -214,12 +214,28 @@ final class BackupStore {
         }
 
         lines.append("STDOUT:")
-        lines.append(contentsOf: log.stdoutLines)
+        lines.append(contentsOf: textLogStdoutLines(from: log.stdoutLines))
         lines.append("")
         lines.append("STDERR:")
         lines.append(contentsOf: log.stderrLines)
         lines.append("")
         return lines.joined(separator: "\n")
+    }
+
+    private func textLogStdoutLines(from stdoutLines: [String]) -> [String] {
+        var omittedItemizedLineCount = 0
+        let retainedLines = stdoutLines.filter { line in
+            if line.hasPrefix("ITEM|") || line.hasPrefix("*deleting ") {
+                omittedItemizedLineCount += 1
+                return false
+            }
+            return true
+        }
+
+        guard omittedItemizedLineCount > 0 else {
+            return retainedLines
+        }
+        return ["Omitted \(omittedItemizedLineCount) itemized rsync change line(s) from this text log."] + retainedLines
     }
 }
 

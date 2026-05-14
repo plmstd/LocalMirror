@@ -357,7 +357,7 @@ final class AppModel: ObservableObject {
     private func handle(runState: BackupRunState) {
         switch runState {
         case .completed(let result):
-            persistTerminalState(outcome: .success, log: result.log, pairID: result.pairID, summary: result.summary)
+            persistTerminalState(outcome: result.outcome, log: result.log, pairID: result.pairID, summary: result.summary)
         case .failed(let failure):
             if let log = failure.log, let pairID = failure.pairID {
                 persistTerminalState(outcome: .failure, log: log, pairID: pairID, summary: failure.reason)
@@ -405,6 +405,7 @@ final class AppModel: ObservableObject {
             case .completed(let result):
                 runState = .completed(
                     RunResult(
+                        outcome: result.outcome,
                         pairID: result.pairID,
                         startedAt: result.startedAt,
                         finishedAt: result.finishedAt,

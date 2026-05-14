@@ -56,6 +56,40 @@ final class BackupStoreTests: XCTestCase {
         XCTAssertEqual(pruned.first?.id, otherLog.id)
     }
 
+    func testTextLogOmitsVerboseItemizedChangeLines() throws {
+        let tempRoot = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: tempRoot, withIntermediateDirectories: true)
+        let defaults = UserDefaults(suiteName: UUID().uuidString)!
+        let store = BackupStore(defaults: defaults, baseDirectory: tempRoot, maxStoredRunLogs: 5)
+
+        let log = RunLog(
+            id: UUID(),
+            pairID: UUID(),
+            startedAt: Date(),
+            finishedAt: Date(),
+            exitCode: 0,
+            wasCancelled: false,
+            stdoutLines: [
+                "ITEM|>f+++++++|large.mov",
+                "*deleting stale.txt",
+                "Number of files: 2"
+            ],
+            stderrLines: ["warning"],
+            warnings: ["warning"],
+            appliedChanges: [],
+            plannedChanges: [],
+            textLogRelativePath: "compacted.log"
+        )
+
+        let textURL = try store.storeRunLog(log)
+        let text = try String(contentsOf: textURL, encoding: .utf8)
+        XCTAssertFalse(text.contains("ITEM|>f+++++++|large.mov"))
+        XCTAssertFalse(text.contains("*deleting stale.txt"))
+        XCTAssertTrue(text.contains("Omitted 2 itemized rsync change line(s)"))
+        XCTAssertTrue(text.contains("Number of files: 2"))
+        XCTAssertTrue(text.contains("warning"))
+    }
+
     private func makePair() -> BackupPair {
         BackupPair(
             id: UUID(),
