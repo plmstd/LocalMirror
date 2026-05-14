@@ -230,6 +230,9 @@ struct RunProgress: Hashable {
     var warningCount: Int
     var estimatedTransferBytes: Int64
     var completedTransferBytes: Int64
+    var currentPathUpdatedAt: Date?
+    var lastTransferProgressAt: Date?
+    var lastOutputAt: Date?
     var currentChangeProgress: Double
     var currentFilePercent: Double?
     var currentFileBytesTransferred: Int64?

@@ -80,6 +80,9 @@ final class BackupOrchestrator: ObservableObject, @unchecked Sendable {
             warningCount: report.warningMessages.count,
             estimatedTransferBytes: report.statistics.estimatedTransferBytes,
             completedTransferBytes: 0,
+            currentPathUpdatedAt: nil,
+            lastTransferProgressAt: nil,
+            lastOutputAt: Date(),
             currentChangeProgress: 0,
             currentFilePercent: nil,
             currentFileBytesTransferred: nil,
@@ -339,6 +342,7 @@ final class BackupOrchestrator: ObservableObject, @unchecked Sendable {
     }
 
     private func apply(event: SyncRunEvent, plannedChangeCount: Int) {
+        let now = Date()
         switch event {
         case .started:
             let current = currentProgress(plannedChangeCount: plannedChangeCount)
@@ -352,6 +356,9 @@ final class BackupOrchestrator: ObservableObject, @unchecked Sendable {
                     warningCount: 0,
                     estimatedTransferBytes: current.estimatedTransferBytes,
                     completedTransferBytes: current.completedTransferBytes,
+                    currentPathUpdatedAt: nil,
+                    lastTransferProgressAt: current.lastTransferProgressAt,
+                    lastOutputAt: now,
                     currentChangeProgress: 0,
                     currentFilePercent: nil,
                     currentFileBytesTransferred: nil,
@@ -370,6 +377,9 @@ final class BackupOrchestrator: ObservableObject, @unchecked Sendable {
                     warningCount: current.warningCount,
                     estimatedTransferBytes: current.estimatedTransferBytes,
                     completedTransferBytes: current.completedTransferBytes,
+                    currentPathUpdatedAt: now,
+                    lastTransferProgressAt: current.lastTransferProgressAt,
+                    lastOutputAt: now,
                     currentChangeProgress: 0,
                     currentFilePercent: nil,
                     currentFileBytesTransferred: nil,
@@ -378,6 +388,9 @@ final class BackupOrchestrator: ObservableObject, @unchecked Sendable {
             )
         case .appliedChange(let change):
             let current = currentProgress(plannedChangeCount: plannedChangeCount)
+            let pathUpdatedAt = change.operation == .create || change.operation == .update
+                ? current.currentPathUpdatedAt
+                : now
             state = .running(
                 RunProgress(
                     phase: "Cloning files…",
@@ -388,6 +401,9 @@ final class BackupOrchestrator: ObservableObject, @unchecked Sendable {
                     warningCount: current.warningCount,
                     estimatedTransferBytes: current.estimatedTransferBytes,
                     completedTransferBytes: current.completedTransferBytes,
+                    currentPathUpdatedAt: pathUpdatedAt,
+                    lastTransferProgressAt: current.lastTransferProgressAt,
+                    lastOutputAt: now,
                     currentChangeProgress: 0,
                     currentFilePercent: nil,
                     currentFileBytesTransferred: nil,
@@ -409,6 +425,9 @@ final class BackupOrchestrator: ObservableObject, @unchecked Sendable {
                     warningCount: current.warningCount,
                     estimatedTransferBytes: current.estimatedTransferBytes,
                     completedTransferBytes: completedTransferBytes,
+                    currentPathUpdatedAt: current.currentPathUpdatedAt,
+                    lastTransferProgressAt: now,
+                    lastOutputAt: now,
                     currentChangeProgress: progress.isCompleted ? 0 : progress.percentComplete,
                     currentFilePercent: progress.isCompleted ? nil : progress.percentComplete,
                     currentFileBytesTransferred: progress.isCompleted ? nil : progress.bytesTransferred,
@@ -427,6 +446,9 @@ final class BackupOrchestrator: ObservableObject, @unchecked Sendable {
                     warningCount: current.warningCount + 1,
                     estimatedTransferBytes: current.estimatedTransferBytes,
                     completedTransferBytes: current.completedTransferBytes,
+                    currentPathUpdatedAt: current.currentPathUpdatedAt,
+                    lastTransferProgressAt: current.lastTransferProgressAt,
+                    lastOutputAt: now,
                     currentChangeProgress: current.currentChangeProgress,
                     currentFilePercent: current.currentFilePercent,
                     currentFileBytesTransferred: current.currentFileBytesTransferred,
@@ -445,6 +467,9 @@ final class BackupOrchestrator: ObservableObject, @unchecked Sendable {
                     warningCount: current.warningCount,
                     estimatedTransferBytes: current.estimatedTransferBytes,
                     completedTransferBytes: current.completedTransferBytes,
+                    currentPathUpdatedAt: current.currentPathUpdatedAt,
+                    lastTransferProgressAt: current.lastTransferProgressAt,
+                    lastOutputAt: now,
                     currentChangeProgress: current.currentChangeProgress,
                     currentFilePercent: current.currentFilePercent,
                     currentFileBytesTransferred: current.currentFileBytesTransferred,
@@ -508,6 +533,9 @@ final class BackupOrchestrator: ObservableObject, @unchecked Sendable {
             warningCount: 0,
             estimatedTransferBytes: 0,
             completedTransferBytes: 0,
+            currentPathUpdatedAt: nil,
+            lastTransferProgressAt: nil,
+            lastOutputAt: nil,
             currentChangeProgress: 0,
             currentFilePercent: nil,
             currentFileBytesTransferred: nil,

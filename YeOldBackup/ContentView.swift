@@ -2,6 +2,11 @@ import SwiftUI
 
 struct ContentView: View {
     @StateObject private var appModel = AppModel()
+    @State private var progressClock = Date()
+
+    private let freshCurrentPathInterval: TimeInterval = 20
+    private let recentTransferInterval: TimeInterval = 20
+    private let staleOutputInterval: TimeInterval = 60
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
@@ -14,6 +19,11 @@ struct ContentView: View {
         .padding(20)
         .frame(minWidth: 760, minHeight: 680)
         .onAppear { appModel.load() }
+        .onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { timestamp in
+            if case .running = appModel.runState {
+                progressClock = timestamp
+            }
+        }
         .sheet(
             isPresented: Binding(
                 get: { appModel.reviewReport != nil },
@@ -275,29 +285,7 @@ struct ContentView: View {
                 }
 
             case .running(let progress):
-                VStack(alignment: .leading, spacing: 12) {
-                    Text(progress.phase)
-                    ProgressView(value: progress.fractionCompleted)
-                    Text("\(progress.appliedChangeCount) of \(max(progress.totalPlannedChanges, 1)) planned change(s) applied.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    if progress.estimatedTransferBytes > 0, progress.totalTransferredBytes > 0 {
-                        Text(overallTransferProgressText(progress))
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    if let currentPath = progress.currentPath, !currentPath.isEmpty {
-                        Text(currentPath)
-                            .font(.caption.monospaced())
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                    }
-                    if progress.warningCount > 0 {
-                        Text("\(progress.warningCount) warning(s) seen so far.")
-                            .font(.caption)
-                            .foregroundStyle(.orange)
-                    }
-                }
+                runningStateView(progress)
 
             case .cancelling(let message):
                 VStack(alignment: .leading, spacing: 8) {
@@ -332,6 +320,96 @@ struct ContentView: View {
         .padding(16)
         .background(.regularMaterial)
         .clipShape(RoundedRectangle(cornerRadius: 14))
+    }
+
+    private func runningStateView(_ progress: RunProgress) -> some View {
+        let presentation = runningStatusPresentation(for: progress, now: progressClock)
+
+        return VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 10) {
+                if presentation.showsSpinner {
+                    ProgressView()
+                        .controlSize(.small)
+                }
+                Text(presentation.title)
+            }
+
+            if let detail = presentation.detail {
+                Text(detail)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            ProgressView(value: progress.fractionCompleted)
+
+            Text("\(progress.appliedChangeCount) of \(max(progress.totalPlannedChanges, 1)) planned change(s) applied.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            if progress.estimatedTransferBytes > 0, progress.totalTransferredBytes > 0 {
+                Text(overallTransferProgressText(progress))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            if let currentPath = presentation.currentPath {
+                Text(currentPath)
+                    .font(.caption.monospaced())
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+
+            if progress.warningCount > 0 {
+                Text("\(progress.warningCount) warning(s) seen so far.")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+            }
+        }
+    }
+
+    private func runningStatusPresentation(for progress: RunProgress, now: Date) -> RunningStatusPresentation {
+        let currentPath = progress.currentPath?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let hasCurrentPath = currentPath?.isEmpty == false
+        let pathIsFresh = progress.currentPathUpdatedAt
+            .map { now.timeIntervalSince($0) <= freshCurrentPathInterval } ?? false
+        let transferIsRecent = progress.lastTransferProgressAt
+            .map { now.timeIntervalSince($0) <= recentTransferInterval } ?? false
+        let outputIsStale = progress.lastOutputAt
+            .map { now.timeIntervalSince($0) >= staleOutputInterval } ?? false
+
+        if hasCurrentPath, pathIsFresh {
+            return RunningStatusPresentation(
+                title: "Cloning files…",
+                detail: nil,
+                currentPath: currentPath,
+                showsSpinner: false
+            )
+        }
+
+        if transferIsRecent {
+            return RunningStatusPresentation(
+                title: "Copying data…",
+                detail: "Overall progress is still updating.",
+                currentPath: nil,
+                showsSpinner: true
+            )
+        }
+
+        if outputIsStale {
+            return RunningStatusPresentation(
+                title: "Waiting for rsync update…",
+                detail: "The clone process is still running.",
+                currentPath: nil,
+                showsSpinner: true
+            )
+        }
+
+        return RunningStatusPresentation(
+            title: "Cloning files…",
+            detail: nil,
+            currentPath: nil,
+            showsSpinner: true
+        )
     }
 
     private func overallTransferProgressText(_ progress: RunProgress) -> String {
@@ -391,6 +469,13 @@ struct ContentView: View {
             }
         }
     }
+}
+
+private struct RunningStatusPresentation {
+    var title: String
+    var detail: String?
+    var currentPath: String?
+    var showsSpinner: Bool
 }
 
 private struct PreflightReviewSheet: View {
