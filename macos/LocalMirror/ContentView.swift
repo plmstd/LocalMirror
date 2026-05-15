@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct ContentView: View {
@@ -9,15 +10,20 @@ struct ContentView: View {
     private let staleOutputInterval: TimeInterval = 60
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            header
-            selectionSection
-            savedPairsSection
-            runStateSection
-            footerControls
+        ZStack {
+            LocalMirrorWindowBackdrop()
+
+            VStack(alignment: .leading, spacing: 18) {
+                header
+                selectionSection
+                savedPairsSection
+                runStateSection
+                footerControls
+            }
+            .padding(20)
         }
-        .padding(20)
         .frame(minWidth: 760, minHeight: 680)
+        .background(LocalMirrorWindowConfigurator())
         .onAppear { appModel.load() }
         .onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { timestamp in
             if case .running = appModel.runState {
@@ -463,6 +469,44 @@ private struct RunningStatusPresentation {
     var detail: String?
     var currentPath: String?
     var showsSpinner: Bool
+}
+
+private struct LocalMirrorWindowBackdrop: View {
+    var body: some View {
+        ZStack {
+            Rectangle()
+                .fill(.ultraThinMaterial)
+            Color(nsColor: .windowBackgroundColor)
+                .opacity(0.34)
+        }
+        .ignoresSafeArea()
+    }
+}
+
+private struct LocalMirrorWindowConfigurator: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView(frame: .zero)
+        DispatchQueue.main.async {
+            configure(window: view.window)
+        }
+        return view
+    }
+
+    func updateNSView(_ view: NSView, context: Context) {
+        DispatchQueue.main.async {
+            configure(window: view.window)
+        }
+    }
+
+    private func configure(window: NSWindow?) {
+        guard let window else { return }
+        window.isOpaque = false
+        window.backgroundColor = .clear
+        window.titlebarAppearsTransparent = true
+        window.isMovableByWindowBackground = true
+        window.contentView?.wantsLayer = true
+        window.contentView?.layer?.backgroundColor = NSColor.clear.cgColor
+    }
 }
 
 private enum LocalMirrorButtonStyle {
