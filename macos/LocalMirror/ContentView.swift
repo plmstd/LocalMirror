@@ -8,15 +8,15 @@ struct ContentView: View {
     private let freshCurrentPathInterval: TimeInterval = 20
     private let recentTransferInterval: TimeInterval = 20
     private let staleOutputInterval: TimeInterval = 60
-    private let titlebarReservedHeight: CGFloat = 44
+    private let titlebarReservedHeight: CGFloat = 76
+    private let trafficLightReservedWidth: CGFloat = 116
 
     var body: some View {
         ZStack {
             LocalMirrorWindowBackdrop()
 
             VStack(spacing: 0) {
-                Color.clear
-                    .frame(height: titlebarReservedHeight)
+                fixedHeader
 
                 ScrollView(.vertical) {
                     VStack(alignment: .leading, spacing: 18) {
@@ -63,29 +63,41 @@ struct ContentView: View {
         }
     }
 
-    private var header: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("LocalMirror")
-                        .font(.system(size: 28, weight: .bold))
-                    Text("Clone backup for local folders and external drives.")
-                        .foregroundStyle(.secondary)
-                }
-                Spacer()
-                if let installation = appModel.installation {
-                    VStack(alignment: .trailing, spacing: 4) {
-                        Text(installation.displayTitle)
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(installation.kind == .systemProvided ? .green : .orange)
-                        Text(installation.versionDescription)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    .localMirrorGlassPanel(cornerRadius: 12, padding: 10)
-                }
+    private var fixedHeader: some View {
+        HStack(alignment: .center, spacing: 16) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("LocalMirror")
+                    .font(.system(size: 24, weight: .bold))
+                    .lineLimit(1)
+                Text("Clone backup for local folders and external drives.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
             }
 
+            Spacer(minLength: 16)
+
+            if let installation = appModel.installation {
+                VStack(alignment: .trailing, spacing: 3) {
+                    Text(installation.displayTitle)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(installation.kind == .systemProvided ? .green : .orange)
+                        .lineLimit(1)
+                    Text(installation.versionDescription)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+                .localMirrorGlassPanel(cornerRadius: 12, padding: 9)
+            }
+        }
+        .padding(.leading, trafficLightReservedWidth)
+        .padding(.trailing, 20)
+        .frame(height: titlebarReservedHeight)
+    }
+
+    private var header: some View {
+        VStack(alignment: .leading, spacing: 8) {
             Text("Target will be made to match source. Files missing from source will be removed from target.")
                 .font(.subheadline)
                 .foregroundStyle(.orange)
