@@ -9,7 +9,7 @@ struct ContentView: View {
     private let recentTransferInterval: TimeInterval = 20
     private let staleOutputInterval: TimeInterval = 60
     private let titlebarReservedHeight: CGFloat = 76
-    private let titlebarContentLeadingPadding: CGFloat = 136
+    private let titlebarContentLeadingPadding: CGFloat = 20
 
     var body: some View {
         ZStack {
