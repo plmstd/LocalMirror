@@ -65,9 +65,7 @@ struct ContentView: View {
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
-                    .padding(10)
-                    .background(.thinMaterial)
-                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                    .localMirrorGlassPanel(cornerRadius: 12, padding: 10)
                 }
             }
 
@@ -78,22 +76,20 @@ struct ContentView: View {
             if let note = appModel.statusNote {
                 Text(note)
                     .font(.caption)
-                    .padding(10)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Color.orange.opacity(0.14))
-                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                    .localMirrorTintedGlassPanel(.orange, opacity: 0.14, cornerRadius: 10, padding: 10)
             }
 
             HStack(spacing: 12) {
                 Button("Reveal Logs in Finder") {
                     appModel.revealLogsInFinder()
                 }
-                .buttonStyle(.bordered)
+                .localMirrorButtonStyle()
 
                 Button("Copy Diagnostics") {
                     appModel.copySupportDiagnostics()
                 }
-                .buttonStyle(.bordered)
+                .localMirrorButtonStyle()
 
                 Spacer()
             }
@@ -124,14 +120,12 @@ struct ContentView: View {
                 Button("Open Full Disk Access Settings") {
                     appModel.openSystemSettings()
                 }
-                .buttonStyle(.bordered)
+                .localMirrorButtonStyle()
 
                 Spacer()
             }
         }
-        .padding(16)
-        .background(.regularMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: 14))
+        .localMirrorGlassPanel()
     }
 
     private func selectionRow(title: String, path: String, action: @escaping () -> Void) -> some View {
@@ -149,7 +143,7 @@ struct ContentView: View {
                 .background(Color.secondary.opacity(0.08))
                 .clipShape(RoundedRectangle(cornerRadius: 10))
             Button("Select…", action: action)
-                .buttonStyle(.borderedProminent)
+                .localMirrorButtonStyle(.prominent)
                 .disabled(appModel.isBusy)
         }
     }
@@ -209,9 +203,7 @@ struct ContentView: View {
                 }
             }
         }
-        .padding(16)
-        .background(.regularMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: 14))
+        .localMirrorGlassPanel()
     }
 
     private func statusPill(for status: BackupOutcomeStatus?) -> some View {
@@ -315,9 +307,7 @@ struct ContentView: View {
                 )
             }
         }
-        .padding(16)
-        .background(.regularMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: 14))
+        .localMirrorGlassPanel()
     }
 
     private func runningStateView(_ progress: RunProgress) -> some View {
@@ -427,13 +417,13 @@ struct ContentView: View {
                 Button("Open Full Log") {
                     appModel.openLatestLog()
                 }
-                .buttonStyle(.bordered)
+                .localMirrorButtonStyle()
                 .disabled(!appModel.canOpenLatestLog)
 
                 Button("Reveal Logs in Finder") {
                     appModel.revealLogsInFinder()
                 }
-                .buttonStyle(.bordered)
+                .localMirrorButtonStyle()
 
                 Spacer()
             }
@@ -446,13 +436,12 @@ struct ContentView: View {
                 Button("Stop Clone Backup") {
                     appModel.stopCloneBackup()
                 }
-                .buttonStyle(.borderedProminent)
-                .tint(.red)
+                .localMirrorButtonStyle(.destructive)
             } else {
                 Button("Start Clone Backup") {
                     appModel.beginCloneBackup()
                 }
-                .buttonStyle(.borderedProminent)
+                .localMirrorButtonStyle(.prominent)
                 .disabled(!appModel.canStartBackup)
             }
 
@@ -462,7 +451,7 @@ struct ContentView: View {
                 Button("Open Full Log") {
                     appModel.openLatestLog()
                 }
-                .buttonStyle(.bordered)
+                .localMirrorButtonStyle()
                 .disabled(!appModel.canOpenLatestLog)
             }
         }
@@ -474,6 +463,69 @@ private struct RunningStatusPresentation {
     var detail: String?
     var currentPath: String?
     var showsSpinner: Bool
+}
+
+private enum LocalMirrorButtonStyle {
+    case regular
+    case prominent
+    case destructive
+}
+
+private extension View {
+    @ViewBuilder
+    func localMirrorGlassPanel(cornerRadius: CGFloat = 16, padding: CGFloat = 16) -> some View {
+        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+        if #available(macOS 26.0, *) {
+            self
+                .padding(padding)
+                .glassEffect(.regular, in: shape)
+        } else {
+            self
+                .padding(padding)
+                .background(.regularMaterial)
+                .clipShape(shape)
+        }
+    }
+
+    @ViewBuilder
+    func localMirrorTintedGlassPanel(_ tint: Color, opacity: Double, cornerRadius: CGFloat = 12, padding: CGFloat = 10) -> some View {
+        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+        if #available(macOS 26.0, *) {
+            self
+                .padding(padding)
+                .glassEffect(.regular.tint(tint.opacity(opacity)), in: shape)
+        } else {
+            self
+                .padding(padding)
+                .background(tint.opacity(opacity))
+                .clipShape(shape)
+        }
+    }
+
+    @ViewBuilder
+    func localMirrorButtonStyle(_ style: LocalMirrorButtonStyle = .regular) -> some View {
+        if #available(macOS 26.0, *) {
+            switch style {
+            case .regular:
+                self.buttonStyle(.glass)
+            case .prominent:
+                self.buttonStyle(.glassProminent)
+            case .destructive:
+                self.buttonStyle(.glassProminent)
+                    .tint(.red)
+            }
+        } else {
+            switch style {
+            case .regular:
+                self.buttonStyle(.bordered)
+            case .prominent:
+                self.buttonStyle(.borderedProminent)
+            case .destructive:
+                self.buttonStyle(.borderedProminent)
+                    .tint(.red)
+            }
+        }
+    }
 }
 
 private struct PreflightReviewSheet: View {
@@ -592,11 +644,12 @@ private struct PreflightReviewSheet: View {
 
             HStack {
                 Button("Cancel", action: onCancel)
+                    .localMirrorButtonStyle()
                 Spacer()
                 Button("Start Clone Now") {
                     onApprove(confirmationInput)
                 }
-                .buttonStyle(.borderedProminent)
+                .localMirrorButtonStyle(.prominent)
                 .disabled(!report.canProceed || (report.requiresTypedConfirmation && confirmationInput != report.confirmationToken))
             }
         }
