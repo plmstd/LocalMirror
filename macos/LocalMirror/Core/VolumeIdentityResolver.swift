@@ -29,12 +29,8 @@ enum VolumeIdentityResolver {
         ]
         let values = try mountURL.resourceValues(forKeys: resourceKeys)
         let fileSystemType = fileSystemName(for: mountURL) ?? values.volumeLocalizedFormatDescription ?? "Unknown"
-        let normalized = fileSystemType.lowercased()
-        let isAPFS = normalized == "apfs" || normalized.contains("apple file system")
         return TargetCapabilities(
             fileSystemType: fileSystemType,
-            isAPFS: isAPFS,
-            supportsSnapshots: isAPFS,
             isReadOnly: values.volumeIsReadOnly ?? false
         )
     }

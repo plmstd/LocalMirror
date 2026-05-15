@@ -9,11 +9,10 @@ LocalMirror is a macOS **clone backup** utility for local folders and external d
 - Mandatory preflight review for **every** clone run.
 - Canonical-path validation to block unsafe selections such as same-folder, nested-folder, home-folder, or protected top-level targets.
 - Target-volume identity validation for external drives.
-- Target capability tracking for filesystem type, APFS readiness, read-only state, and future history support.
+- Target capability tracking for filesystem type and read-only state.
 - Typed confirmation for high-risk destructive runs.
 - Structured run lifecycle with explicit `preflighting`, `review`, `running`, `cancelling`, `completed`, `failed`, and `cancelled` states.
 - Full log retention on disk with in-app log reveal and support diagnostics actions.
-- A no-op snapshot service boundary so APFS clone history can be added in a later release without another architecture rewrite.
 
 ## Safety Model
 
@@ -25,14 +24,12 @@ LocalMirror is intentionally conservative:
 - Every run starts with a dry-run preflight that computes the planned changes.
 - Runs are blocked if the selected target is unsafe or the mounted target drive does not match the saved drive identity.
 - High-risk runs require the user to type the target volume or folder name exactly before the clone phase can start.
-- APFS history is not enabled yet, but the app records target filesystem capabilities so that dedicated APFS targets can support clone history later.
-
 Network shares are currently treated as **best effort only**. The hardened workflow is optimized for local folders and removable drives.
 
 ## App Layout
 
 - `macos/LocalMirror/Core`
-  - Shared models, path validation, volume identity resolution, rsync output parsing, orchestrator, snapshot-service abstraction.
+  - Shared models, path validation, volume identity resolution, rsync output parsing, and orchestrator.
 - `macos/LocalMirror/Services`
   - System-rsync discovery and the concrete `RsyncSyncEngine`.
 - `macos/LocalMirror/Storage`

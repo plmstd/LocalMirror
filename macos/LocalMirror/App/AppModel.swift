@@ -521,7 +521,6 @@ final class AppModel: ObservableObject {
             "Source Path: \(sourcePath.isEmpty ? "None" : sourcePath)",
             "Target Path: \(targetPath.isEmpty ? "None" : targetPath)",
             "Target File System: \(targetCapabilities?.fileSystemType ?? "Unknown")",
-            "Target Snapshot Readiness: \(targetCapabilities?.historyModeLabel ?? "Unknown")",
             "Logs Directory: \(AppPaths.logsDirectory.path)",
             "Run State: \(runStateDescription)"
         ]

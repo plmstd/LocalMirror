@@ -113,7 +113,6 @@ struct ContentView: View {
             if let capabilities = appModel.selectedTargetCapabilities {
                 HStack(spacing: 18) {
                     capabilityPill(title: "Target FS", value: capabilities.fileSystemType)
-                    capabilityPill(title: "History", value: capabilities.historyModeLabel)
                     if capabilities.isReadOnly {
                         capabilityPill(title: "Access", value: "Read-only")
                     }
@@ -184,10 +183,6 @@ struct ContentView: View {
                 TableColumn("Target FS") { pair in
                     Text(pair.targetCapabilities.fileSystemType)
                         .foregroundStyle(.secondary)
-                }
-                TableColumn("History") { pair in
-                    Text(pair.targetCapabilities.historyModeLabel)
-                        .foregroundStyle(pair.targetCapabilities.supportsSnapshots ? .green : .secondary)
                 }
                 TableColumn("Last Run") { pair in
                     if let lastRun = pair.lastRun {
@@ -524,16 +519,6 @@ private struct PreflightReviewSheet: View {
                     keyValue("Planned Deletions", value: "\(report.statistics.deletionCount)")
                     keyValue("Estimated Transfer", value: byteCount(report.statistics.estimatedTransferBytes))
                     keyValue("Free Space", value: report.availableFreeBytes.map(byteCount) ?? "Unavailable")
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
-
-            GroupBox("Target Mode") {
-                VStack(alignment: .leading, spacing: 8) {
-                    keyValue("Current Mode", value: report.currentTargetCapabilities.historyModeLabel)
-                    Text(report.snapshotReadinessSummary)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }

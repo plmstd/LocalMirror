@@ -8,16 +8,13 @@ final class BackupOrchestrator: ObservableObject, @unchecked Sendable {
     @Published private(set) var preflightProgress: PreflightProgress?
 
     private let engine: SyncEngine
-    private let snapshotService: SnapshotService
     private let exclusions: [String]
 
     init(
         engine: SyncEngine,
-        snapshotService: SnapshotService = NoopSnapshotService(),
         exclusions: [String] = BackupExclusions.defaults
     ) {
         self.engine = engine
-        self.snapshotService = snapshotService
         self.exclusions = exclusions
         self.installation = try? engine.validateInstallation()
     }
@@ -67,7 +64,6 @@ final class BackupOrchestrator: ObservableObject, @unchecked Sendable {
     func startApprovedRun() {
         guard case .review(let report) = state else { return }
         let engine = self.engine
-        let snapshotService = self.snapshotService
         let exclusions = self.exclusions
         let plannedChangeCount = max(report.plannedChanges.count, report.statistics.totalChangeCount)
 
@@ -90,7 +86,7 @@ final class BackupOrchestrator: ObservableObject, @unchecked Sendable {
         )
         state = .running(initialProgress)
 
-        Task.detached(priority: .userInitiated) { [self, report, engine, snapshotService, exclusions, plannedChangeCount] in
+        Task.detached(priority: .userInitiated) { [self, report, engine, exclusions, plannedChangeCount] in
             let startedAt = Date()
             do {
                 let completion = try await engine.run(
@@ -107,7 +103,6 @@ final class BackupOrchestrator: ObservableObject, @unchecked Sendable {
 
                 let finishedAt = completion.log.finishedAt
                 let logURL = AppPaths.logsDirectory.appendingPathComponent(completion.log.textLogRelativePath)
-                var postCloneWarnings: [String] = []
 
                 if completion.log.wasCancelled {
                     await MainActor.run {
@@ -126,33 +121,8 @@ final class BackupOrchestrator: ObservableObject, @unchecked Sendable {
                     return
                 }
 
-                do {
-                    let targetURL = try BookmarkResolver.resolve(report.pair.targetBookmark)
-                    _ = try await snapshotService.postCloneSuccess(
-                        for: report.pair,
-                        targetURL: targetURL,
-                        targetCapabilities: report.currentTargetCapabilities
-                    )
-                } catch {
-                    postCloneWarnings.append("Post-clone action failed: \(error.localizedDescription)")
-                }
-
-                let combinedWarnings = completion.log.warnings + postCloneWarnings
+                let combinedWarnings = completion.log.warnings
                 let outcome = BackupOutcomeStatus.rsyncOutcome(for: completion.log.exitCode)
-                let logWithPostCloneWarnings = RunLog(
-                    id: completion.log.id,
-                    pairID: completion.log.pairID,
-                    startedAt: completion.log.startedAt,
-                    finishedAt: completion.log.finishedAt,
-                    exitCode: completion.log.exitCode,
-                    wasCancelled: completion.log.wasCancelled,
-                    stdoutLines: completion.log.stdoutLines,
-                    stderrLines: completion.log.stderrLines,
-                    warnings: combinedWarnings,
-                    appliedChanges: completion.log.appliedChanges,
-                    plannedChanges: completion.log.plannedChanges,
-                    textLogRelativePath: completion.log.textLogRelativePath
-                )
 
                 if outcome == .success || outcome == .partial {
                     await MainActor.run {
@@ -162,11 +132,11 @@ final class BackupOrchestrator: ObservableObject, @unchecked Sendable {
                                 pairID: report.pair.id,
                                 startedAt: startedAt,
                                 finishedAt: finishedAt,
-                                appliedChangeCount: logWithPostCloneWarnings.appliedChanges.count,
-                                deletionCount: logWithPostCloneWarnings.appliedChanges.filter { $0.operation == .delete }.count,
+                                appliedChangeCount: completion.log.appliedChanges.count,
+                                deletionCount: completion.log.appliedChanges.filter { $0.operation == .delete }.count,
                                 warnings: combinedWarnings,
                                 logFileURL: logURL,
-                                log: logWithPostCloneWarnings,
+                                log: completion.log,
                                 summary: outcome == .partial
                                     ? "Clone backup completed with issues (rsync exit code \(completion.log.exitCode))."
                                     : combinedWarnings.isEmpty
@@ -185,7 +155,7 @@ final class BackupOrchestrator: ObservableObject, @unchecked Sendable {
                                 reason: "rsync exited with code \(completion.log.exitCode).",
                                 warnings: combinedWarnings,
                                 logFileURL: logURL,
-                                log: logWithPostCloneWarnings
+                                log: completion.log
                             )
                         )
                     }
@@ -251,15 +221,6 @@ final class BackupOrchestrator: ObservableObject, @unchecked Sendable {
         if pair.targetCapabilities.fileSystemType != TargetCapabilities.unknown.fileSystemType,
            pair.targetCapabilities.fileSystemType != currentTargetCapabilities.fileSystemType {
             validationMessages.append(.init(severity: .info, message: "The target file system is now \(currentTargetCapabilities.fileSystemType); it was previously saved as \(pair.targetCapabilities.fileSystemType)."))
-        }
-        if currentTargetCapabilities.supportsSnapshots {
-            if pathValidation.targetCanonicalPath == currentTargetVolume.mountPath {
-                validationMessages.append(.init(severity: .info, message: "The target is a dedicated APFS volume root and is compatible with future clone-history support."))
-            } else {
-                validationMessages.append(.init(severity: .info, message: "The target volume is APFS, but future clone-history support would require using a dedicated APFS target volume instead of a folder inside it."))
-            }
-        } else {
-            validationMessages.append(.init(severity: .info, message: "The target file system (\(currentTargetCapabilities.fileSystemType)) supports live clone mode only in v1."))
         }
 
         let preflight = try await engine.preflight(

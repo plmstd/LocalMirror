@@ -63,20 +63,12 @@ struct BackupPairLastRun: Codable, Hashable {
 
 struct TargetCapabilities: Codable, Hashable {
     var fileSystemType: String
-    var isAPFS: Bool
-    var supportsSnapshots: Bool
     var isReadOnly: Bool
 
     static let unknown = TargetCapabilities(
         fileSystemType: "Unknown",
-        isAPFS: false,
-        supportsSnapshots: false,
         isReadOnly: false
     )
-
-    var historyModeLabel: String {
-        supportsSnapshots ? "APFS-ready" : "Clone-only"
-    }
 }
 
 struct BackupPair: Codable, Identifiable, Hashable {
@@ -345,20 +337,6 @@ struct PreflightReport: Hashable {
         return "\(statistics.totalChangeCount) planned change(s), including \(statistics.deletionCount) deletion(s)."
     }
 
-    var targetIsDedicatedVolume: Bool {
-        pair.targetCanonicalPath == currentTargetVolume.mountPath
-    }
-
-    var snapshotReadinessSummary: String {
-        if currentTargetCapabilities.supportsSnapshots {
-            if targetIsDedicatedVolume {
-                return "The target is an APFS volume root. Clone history can be added here in a later release."
-            }
-            return "The target volume is APFS, but future clone history would require using a dedicated APFS target volume instead of a folder inside it."
-        }
-
-        return "The target file system (\(currentTargetCapabilities.fileSystemType)) supports live clone mode only in v1."
-    }
 }
 
 enum BackupRunState {
