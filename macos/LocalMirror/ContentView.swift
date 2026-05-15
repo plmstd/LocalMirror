@@ -9,7 +9,7 @@ struct ContentView: View {
     private let recentTransferInterval: TimeInterval = 20
     private let staleOutputInterval: TimeInterval = 60
     private let titlebarReservedHeight: CGFloat = 76
-    private let trafficLightReservedWidth: CGFloat = 116
+    private let titlebarContentLeadingPadding: CGFloat = 136
 
     var body: some View {
         ZStack {
@@ -91,7 +91,7 @@ struct ContentView: View {
                 .localMirrorGlassPanel(cornerRadius: 12, padding: 9)
             }
         }
-        .padding(.leading, trafficLightReservedWidth)
+        .padding(.leading, titlebarContentLeadingPadding)
         .padding(.trailing, 20)
         .frame(height: titlebarReservedHeight)
     }
