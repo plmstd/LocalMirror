@@ -102,7 +102,7 @@ export default function Home() {
           </DownloadWrapper>
         </div>
         <Image
-          src="/images/localmirror-screenshot-02.jpg"
+          src="/images/localmirror-screenshot-03.jpg"
           alt="LocalMirror"
           width={6000}
           height={0}
