@@ -1,0 +1,7 @@
+{
+  "name": "localmirror-app",
+  "private": true,
+  "scripts": {
+    "dev:web": "npm --prefix website run dev"
+  }
+}
