@@ -4,7 +4,7 @@ import { GITHUB_URL } from "@/consts";
 
 const navItems = [
   { label: "What?", href: "#what-it-is" },
-  { label: "Why?", href: "#why-yeoldbackup" },
+  { label: "Why?", href: "#why-localmirror" },
   { label: "How?", href: "#how-it-works" },
   { label: "Get Started", href: "#getting-started" },
   { label: "FAQ", href: "#faq" },
@@ -13,7 +13,7 @@ const navItems = [
 const Navbar = () => {
   return (
     <div className="py-4 flex justify-between items-center border-b border-gray-200">
-      <span className="font-bold">YeOldBackup</span>
+      <span className="font-bold">LocalMirror</span>
       <div className="flex gap-5 items-center">
         <div className="gap-3 items-center text-sm font-semibold hidden md:flex">
           {navItems.map((item) => (

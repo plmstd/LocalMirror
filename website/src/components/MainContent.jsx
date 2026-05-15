@@ -24,7 +24,7 @@ const MainContent = () => {
     <div className="markdown">
       <ExtendedMarkdown id="what-it-is">{whatItIscontent}</ExtendedMarkdown>
       <hr />
-      <ExtendedMarkdown id="why-yeoldbackup">
+      <ExtendedMarkdown id="why-localmirror">
         {whyYouMightLikeItContent}
       </ExtendedMarkdown>
       <hr />

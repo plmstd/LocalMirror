@@ -4,7 +4,7 @@ import Footer from "@/components/Footer";
 import Script from "next/script";
 
 export const metadata = {
-  title: "YeOldBackup",
+  title: "LocalMirror",
   description: "Minimalistic File Sync and Backup Utility for MacOs",
 };
 
@@ -14,14 +14,14 @@ export default function RootLayout({ children }) {
       <head>
         <Script
           defer
-          data-domain="yeoldbackup.xyz"
+          data-domain="localmirror.app"
           src="https://plausible.io/js/script.outbound-links.js"
           strategy="beforeInteractive"
         />
         <Script
           defer
           data-website-id="dfid_xltNNhntkEpvH9oOlho2Q"
-          data-domain="www.yeoldbackup.xyz"
+          data-domain="www.localmirror.app"
           src="https://datafa.st/js/script.js"
         />
       </head>

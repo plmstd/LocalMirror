@@ -5,7 +5,7 @@ const Footer = () => {
   return (
     <div className="py-2 flex justify-between items-center border-t border-gray-200 text-sm">
       <div className="font-medium flex gap-2 items-center">
-        YeOldBackup is created by{" "}
+        LocalMirror is created by{" "}
         <a href="https://www.palmio.io" className="text-blue-500 font-bold">
           palmio
         </a>

@@ -11,7 +11,7 @@ export default function Home() {
   return (
     <div>
       <div className="">
-        <h1 className="text-4xl font-bold mb-4">YeOldBackup</h1>
+        <h1 className="text-4xl font-bold mb-4">LocalMirror</h1>
         <div className="flex gap-2 items-center mb-5 flex-wrap">
           <a href={GITHUB_URL} target="_blank" rel="noopener noreferrer">
             <Badge
@@ -75,7 +75,7 @@ export default function Home() {
         </div>
         <InfoBox type="warn" className="mb-5">
           <p>
-            YeOldBackup is vibe coded (primarily AI-generated) and may not
+            LocalMirror is vibe coded (primarily AI-generated) and may not
             function as intended. It could contain bugs or exhibit unpredictable
             behavior. Use at your own risk.
           </p>
@@ -102,8 +102,8 @@ export default function Home() {
           </DownloadWrapper>
         </div>
         <Image
-          src="/images/yeoldbackup-screenshot-02.jpg"
-          alt="YeOldBackup"
+          src="/images/localmirror-screenshot-02.jpg"
+          alt="LocalMirror"
           width={6000}
           height={0}
           className="rounded-lg bg-primary/10"

@@ -2,10 +2,10 @@ import { GITHUB_URL } from "@/consts";
 
 export const whatItIscontent = `## 🧭 What It Is
 
-YeOldBackup is a simple app for **manually backing up folders or hard drives on macOS**.  
+LocalMirror is a simple app for **manually backing up folders or hard drives on macOS**.  
 It uses the trusted \`rsync\` tool under the hood — but with a clean graphical interface.
 
-You choose a **source** folder or hard drive (where your files are) and a **target** folder or hard drive (where you want the backup), and YeOldBackup will **mirror** the source to the target.  
+You choose a **source** folder or hard drive (where your files are) and a **target** folder or hard drive (where you want the backup), and LocalMirror will **mirror** the source to the target.  
 That means: new files are copied, changed files are updated, and files in the target that don’t exist in the source are deleted.
 
 It's like a super-visible Time Machine. No cloud. No background syncing. Just you and your files.`;
@@ -33,7 +33,7 @@ export const howItWorksContent = `## 🛠️ How It Works
 
 export const useWithCautionContent = `## ⚠️ Use With Caution
 
-YeOldBackup is a tool, not a safety net. It’s provided “as is”: vibe-coded and minimal. Please read carefully:
+LocalMirror is a tool, not a safety net. It’s provided “as is”: vibe-coded and minimal. Please read carefully:
 
 - **Deletions are permanent**. The target folder is mirrored.
 - **Double-check** source and target paths before syncing.
@@ -46,11 +46,11 @@ Use at your own risk. Always be careful with your data.`;
 export const gettingStartedContent = `## 🧩 Getting Started
 
 1. **[Download the App](/api/download)**
-2. Move \`YeOldBackup.app\` to your Applications folder
+2. Move \`LocalMirror.app\` to your Applications folder
 3. Launch the app
 4. Grant Full Disk Access:
    - Open **System Settings → Privacy & Security → Full Disk Access**
-   - Add \`YeOldBackup.app\` and enable it
+   - Add \`LocalMirror.app\` and enable it
 5. Select your source and target folders
 6. Click **"Sync Now"** when ready
 
@@ -59,7 +59,7 @@ export const gettingStartedContent = `## 🧩 Getting Started
 export const faqContent = `## ❓ FAQ
 
 **Does this replace Time Machine?**  
-No. Time Machine does automatic backups over time. YeOldBackup is manual and minimal.
+No. Time Machine does automatic backups over time. LocalMirror is manual and minimal.
 
 **Can I use it with external drives?**  
 Yes. Just make sure the drive is mounted.
@@ -75,7 +75,7 @@ Nope. It only does what you tell it to do. No hidden services.`;
 
 export const aboutContent = `## 👨‍🔧 About This Project
 
-YeOldBackup was vibe coded as a side project. It’s intentionally minimal, open source, and not meant to be a commercial product.
+LocalMirror was vibe coded as a side project. It’s intentionally minimal, open source, and not meant to be a commercial product.
 
 If you find it useful, that’s great. If not, that’s fine too. Either way: back up your stuff ✌️`;
 
