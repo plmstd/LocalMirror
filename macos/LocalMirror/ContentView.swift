@@ -8,21 +8,32 @@ struct ContentView: View {
     private let freshCurrentPathInterval: TimeInterval = 20
     private let recentTransferInterval: TimeInterval = 20
     private let staleOutputInterval: TimeInterval = 60
+    private let titlebarReservedHeight: CGFloat = 44
 
     var body: some View {
         ZStack {
             LocalMirrorWindowBackdrop()
 
-            VStack(alignment: .leading, spacing: 18) {
-                header
-                selectionSection
-                savedPairsSection
-                runStateSection
-                footerControls
+            VStack(spacing: 0) {
+                Color.clear
+                    .frame(height: titlebarReservedHeight)
+
+                ScrollView(.vertical) {
+                    VStack(alignment: .leading, spacing: 18) {
+                        header
+                        selectionSection
+                        savedPairsSection
+                        runStateSection
+                        footerControls
+                    }
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, 20)
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
+                }
+                .scrollIndicators(.visible)
             }
-            .padding(20)
         }
-        .frame(minWidth: 760, minHeight: 680)
+        .frame(minWidth: 760, minHeight: 420)
         .background(LocalMirrorWindowConfigurator())
         .onAppear { appModel.load() }
         .onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { timestamp in
