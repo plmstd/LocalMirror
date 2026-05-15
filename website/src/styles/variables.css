@@ -1,0 +1,17 @@
+/* Global CSS Variables */
+@theme {
+  /* Primary (Main brand color - a sleek modern blue) */
+  --color-primary: #1d87ff; /* Vivid Blue */
+  --color-primary-hover: #4da0ff; /* Slightly darker */
+  --color-primary-active: #0070ef; /* Even darker for pressed state */
+
+  /* Accent (Eye-catching color for CTAs, highlights) */
+  --color-accent: #febc2e; /* Modern Turquoise */
+  --color-accent-hover: #ffd476;
+  --color-accent-active: #e29a00;
+
+  /* Text Colors */
+  --color-text: #1e2939;
+  --color-text-muted: #475569;
+  --color-text-subtle: #64748b;
+}
