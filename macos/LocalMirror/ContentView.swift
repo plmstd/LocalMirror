@@ -193,7 +193,7 @@ struct ContentView: View {
                     }
                 }
                 TableColumn("Status") { pair in
-                    statusPill(for: pair.lastRun?.status)
+                    statusPill(for: pair.lastRun?.status, isSelected: pair.id == appModel.selectedPairID)
                 }
             }
             .frame(minHeight: 180, maxHeight: 240)
@@ -211,27 +211,40 @@ struct ContentView: View {
         .localMirrorGlassPanel()
     }
 
-    private func statusPill(for status: BackupOutcomeStatus?) -> some View {
+    private func statusPill(for status: BackupOutcomeStatus?, isSelected: Bool) -> some View {
         Group {
             switch status {
             case .success:
                 Label("Success", systemImage: "checkmark.circle.fill")
-                    .foregroundStyle(.green)
             case .partial:
                 Label("Partial", systemImage: "exclamationmark.triangle.fill")
-                    .foregroundStyle(.orange)
             case .failure:
                 Label("Failed", systemImage: "xmark.circle.fill")
-                    .foregroundStyle(.red)
             case .cancelled:
                 Label("Cancelled", systemImage: "stop.circle.fill")
-                    .foregroundStyle(.orange)
             case .none:
                 Text("New")
-                    .foregroundStyle(.secondary)
             }
         }
         .font(.caption.weight(.medium))
+        .foregroundStyle(statusColor(for: status, isSelected: isSelected))
+    }
+
+    private func statusColor(for status: BackupOutcomeStatus?, isSelected: Bool) -> Color {
+        if isSelected {
+            return .white
+        }
+
+        switch status {
+        case .success:
+            return .green
+        case .partial, .cancelled:
+            return .orange
+        case .failure:
+            return .red
+        case .none:
+            return .secondary
+        }
     }
 
     @ViewBuilder
