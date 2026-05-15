@@ -31,38 +31,48 @@ Network shares are currently treated as **best effort only**. The hardened workf
 
 ## App Layout
 
-- `LocalMirror/Core`
+- `macos/LocalMirror/Core`
   - Shared models, path validation, volume identity resolution, rsync output parsing, orchestrator, snapshot-service abstraction.
-- `LocalMirror/Services`
+- `macos/LocalMirror/Services`
   - System-rsync discovery and the concrete `RsyncSyncEngine`.
-- `LocalMirror/Storage`
+- `macos/LocalMirror/Storage`
   - File-backed persistence and migration from the previous `@AppStorage` layout.
-- `LocalMirror/App`
+- `macos/LocalMirror/App`
   - The app model and System Settings helper.
-- `Tests/LocalMirrorCoreTests`
+- `macos/Tests/LocalMirrorCoreTests`
   - Parser, validator, store, and orchestrator tests via SwiftPM.
+- `website`
+  - Next.js site for the LocalMirror macOS app.
 
 ## Local Development
 
 Build the app from Xcode or from the command line:
 
 ```bash
-xcodebuild -project LocalMirror.xcodeproj -scheme LocalMirror -configuration Debug -derivedDataPath /tmp/LocalMirrorDerived CODE_SIGNING_ALLOWED=NO build
+xcodebuild -project macos/LocalMirror.xcodeproj -scheme LocalMirror -configuration Debug -derivedDataPath /tmp/LocalMirrorDerived CODE_SIGNING_ALLOWED=NO build
 ```
 
 Run the fast core test suite:
 
 ```bash
+cd macos
 swift test
+```
+
+Run the website locally:
+
+```bash
+cd website
+npm run dev
 ```
 
 ## Releasing
 
 The project ships as a direct-download macOS app, not a Mac App Store app.
 
-- Release build helper: [`scripts/build-release.sh`](scripts/build-release.sh)
-- Notarization helper: [`scripts/notarize-app.sh`](scripts/notarize-app.sh)
-- End-to-end release notes: [`docs/RELEASE.md`](docs/RELEASE.md)
+- Release build helper: [`macos/scripts/build-release.sh`](macos/scripts/build-release.sh)
+- Notarization helper: [`macos/scripts/notarize-app.sh`](macos/scripts/notarize-app.sh)
+- End-to-end release notes: [`macos/docs/RELEASE.md`](macos/docs/RELEASE.md)
 
 ## Important Notes
 
