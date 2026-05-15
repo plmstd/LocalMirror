@@ -8,7 +8,7 @@ struct ContentView: View {
     private let freshCurrentPathInterval: TimeInterval = 20
     private let recentTransferInterval: TimeInterval = 20
     private let staleOutputInterval: TimeInterval = 60
-    private let titlebarReservedHeight: CGFloat = 76
+    private let titlebarReservedHeight: CGFloat = 100
     private let titlebarContentLeadingPadding: CGFloat = 20
 
     var body: some View {
@@ -135,16 +135,6 @@ struct ContentView: View {
                 appModel.selectDirectory(.target)
             }
 
-            if let capabilities = appModel.selectedTargetCapabilities {
-                HStack(spacing: 18) {
-                    capabilityPill(title: "Target FS", value: capabilities.fileSystemType)
-                    if capabilities.isReadOnly {
-                        capabilityPill(title: "Access", value: "Read-only")
-                    }
-                    Spacer()
-                }
-            }
-
             HStack(spacing: 12) {
                 Button("Open Full Disk Access Settings") {
                     appModel.openSystemSettings()
@@ -175,20 +165,6 @@ struct ContentView: View {
                 .localMirrorButtonStyle(.prominent)
                 .disabled(appModel.isBusy)
         }
-    }
-
-    private func capabilityPill(title: String, value: String) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(title)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            Text(value)
-                .font(.caption.weight(.semibold))
-        }
-        .padding(.vertical, 8)
-        .padding(.horizontal, 10)
-        .background(Color.secondary.opacity(0.08))
-        .clipShape(RoundedRectangle(cornerRadius: 10))
     }
 
     private var savedPairsSection: some View {
