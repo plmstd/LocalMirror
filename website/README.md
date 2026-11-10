@@ -49,9 +49,10 @@ stops collection synchronously and clears identifiers.
 
 Source files: `src/lib/analyticsRuntime.js`, `analyticsConsent.js`,
 `analyticsPaths.js`, `legacyAnalyticsCleanup.js` and `src/components/AnalyticsConsent.jsx`.
-The temporary consent-gated DataFast bridge is removed only after the separately
-verified native history import; the operator has approved importing the available
-individual records and explicitly documenting DataFast's unavailable source history.
+The DataFast bridge is retired after acceptance of the available native history.
+The operator approved importing the available real individual records and
+explicitly documenting DataFast's unavailable source history. Legacy DataFast
+cookies are cleared without disturbing own Analytics identifiers or preferences.
 No macOS app files, sync behavior or release configuration are changed.
 
 Validation: `node specs/analytics.test.mjs` and `npm run build` from `website/`.
