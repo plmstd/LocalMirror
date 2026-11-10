@@ -12,7 +12,7 @@ import {
   readAnalyticsConsent,
   saveAnalyticsConsent,
 } from '../lib/analyticsConsent';
-import { allowLegacyAnalytics } from '../lib/legacyAnalytics';
+import { cleanupLegacyAnalytics } from '../lib/legacyAnalyticsCleanup';
 
 /** Optional first-party consent owns the collector; tool inputs are never read. */
 export default function AnalyticsConsent() {
@@ -24,7 +24,7 @@ export default function AnalyticsConsent() {
     const apply = (next) => {
       setChoice(next);
       syncOwnAnalyticsConsent(next === 'allowed');
-      allowLegacyAnalytics(next === 'allowed');
+      cleanupLegacyAnalytics(window);
     };
     apply(readAnalyticsConsent(analyticsStorage(window)));
     const settings = () => setEditing(true);
@@ -47,7 +47,7 @@ export default function AnalyticsConsent() {
     syncOwnAnalyticsConsent(allowed);
     setChoice(next);
     setEditing(false);
-    allowLegacyAnalytics(allowed);
+    cleanupLegacyAnalytics(window);
   };
 
   if (choice === undefined || (choice !== null && !editing)) return null;
@@ -73,7 +73,7 @@ export default function AnalyticsConsent() {
       <div className="flex flex-wrap gap-2 mt-4">
         <button
           type="button"
-          className="bg-primary hover:opacity-90 text-white px-5 py-3 rounded-md font-semibold rounded-md"
+          className="bg-primary hover:opacity-90 text-white px-5 py-3 rounded-md font-semibold"
           data-testid="analytics-allow"
           onClick={() => choose(true)}
         >
