@@ -1,3 +1,4 @@
+import {AnalyticsSettingsButton} from './AnalyticsConsent';
 import { FaXTwitter } from "react-icons/fa6";
 import { GITHUB_URL } from "@/consts";
 
@@ -22,7 +23,9 @@ const Footer = () => {
           </a>
         </div>
       </div>
-      <div className="flex gap-5 items-center">
+      <div className="flex gap-5 items-center flex-wrap">
+        <AnalyticsSettingsButton />
+        <a href="/privacy">Privacy policy</a>
         <a href={GITHUB_URL} target="_blank" rel="noopener noreferrer">
           GitHub
         </a>
