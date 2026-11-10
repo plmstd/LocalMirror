@@ -1,7 +1,8 @@
+import AnalyticsConsent from '../components/AnalyticsConsent';
 import "@/styles/globals.css";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
-import Script from "next/script";
+
 
 export const metadata = {
   title: "LocalMirror",
@@ -12,12 +13,6 @@ export default function RootLayout({ children }) {
   return (
     <html lang="en">
       <head>
-        <Script
-          defer
-          data-website-id="dfid_xltNNhntkEpvH9oOlho2Q"
-          data-domain="www.localmirror.app"
-          src="https://datafa.st/js/script.js"
-        />
         <link
           rel="icon"
           type="image/png"
@@ -39,6 +34,7 @@ export default function RootLayout({ children }) {
         <link rel="manifest" href="/favicon/site.webmanifest?v=20260515" />
       </head>
       <body className={`antialiased`}>
+        <AnalyticsConsent />
         <div className="mb-10 lg:mb-16">
           <Navbar />
         </div>
